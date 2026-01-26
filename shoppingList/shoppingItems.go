@@ -55,7 +55,7 @@ var ShoppingList = []ShoppingItem{
 	{"Plum Jam 🍈", Condiments},
 	{"Blueberries 🫐", Fruit},
 	{"Flour 🌾", Pantry},
-	{"Baby Wipes 🧻", Baby},
+	{"Baby Wipes 🧻", Household},
 	{"Cling Film 🫙", Household},
 	{"Vitamins 💊", Health},
 	{"Cauliflower 🥦", Veg},
