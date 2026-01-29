@@ -5,5 +5,5 @@ import (
 )
 
 func Conn() string {
-	return os.Getenv("DATABASE")
+	return os.Getenv("DATABASE_URL")
 }
