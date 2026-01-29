@@ -19,7 +19,7 @@ CREATE TYPE shopping_item_type AS ENUM (
     'condiments'
 );
 
--- Future, add uniue id
+-- Future, add uniue text ids
 CREATE TABLE shopping_items (
     id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name TEXT NOT NULL,
