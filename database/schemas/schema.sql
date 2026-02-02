@@ -37,9 +37,9 @@ CREATE TABLE households (
 
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    name TEXT NOt NULL,
+    name TEXT NOT NULL,
     household INT REFERENCES households(household_id),
-    username TEXT NOt NULL,
-    password_hash TEXT NOt NULL,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT now()
 );
