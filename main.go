@@ -20,25 +20,10 @@ func main() {
 	http.HandleFunc("/login", login)
 	http.HandleFunc("/profile", authentication.RequireAuth(profile))
 	http.HandleFunc("/logout", logout)
+	authentication.StartSessionCleanup()
+
 	fmt.Println("Server listening on :8080")
 	fmt.Println(http.ListenAndServe(":8080", nil))
-
-	// http.HandleFunc("/setup", func(w http.ResponseWriter, r *http.Request) {
-	// 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-	// 	defer cancel()
-	// 	pool := createPool(ctx)
-	// 	defer pool.Close()
-	// 	w.Header().Set("Content-Type", "application/json")
-
-	// 	items, err := database.GetItemsFromList(pool, ctx)
-	// 	if err != nil {
-	// 		w.WriteHeader(http.StatusNotFound)
-	// 	} else {
-	// 		w.WriteHeader(http.StatusOK)
-	// 		json.NewEncoder(w).Encode(items)
-	// 	}
-
-	// })
 }
 
 func createPool(ctx context.Context) *pgxpool.Pool {

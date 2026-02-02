@@ -5,12 +5,18 @@ import (
 	"encoding/hex"
 	"net/http"
 	"sync"
+	"time"
 )
 
 var (
-	sessions   = make(map[string]string)
+	sessions   = make(map[string]Session)
 	sessionMux sync.Mutex
 )
+
+type Session struct {
+	Username  string
+	ExpiresAt time.Time
+}
 
 func newSessionID() string {
 	b := make([]byte, 32)
@@ -21,8 +27,13 @@ func newSessionID() string {
 func CreateSession(w http.ResponseWriter, username string) {
 	sessionID := newSessionID()
 
+	session := Session{
+		Username:  username,
+		ExpiresAt: time.Now().Add(30 * time.Minute),
+	}
+
 	sessionMux.Lock()
-	sessions[sessionID] = username
+	sessions[sessionID] = session
 	sessionMux.Unlock()
 
 	http.SetCookie(w, &http.Cookie{
@@ -30,8 +41,9 @@ func CreateSession(w http.ResponseWriter, username string) {
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // true in prod
+		Secure:   false,
 		SameSite: http.SameSiteStrictMode,
+		Expires:  session.ExpiresAt,
 	})
 }
 
@@ -60,8 +72,18 @@ func GetUser(r *http.Request) (string, bool) {
 	sessionMux.Lock()
 	defer sessionMux.Unlock()
 
-	user, ok := sessions[cookie.Value]
-	return user, ok
+	session, ok := sessions[cookie.Value]
+	if !ok {
+		return "", false
+	}
+
+	// Check expiration
+	if time.Now().After(session.ExpiresAt) {
+		delete(sessions, cookie.Value)
+		return "", false
+	}
+
+	return session.Username, true
 }
 
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -75,4 +97,20 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 		r.Header.Set("X-User", user)
 		next(w, r)
 	}
+}
+
+func StartSessionCleanup() {
+	go func() {
+		for {
+			time.Sleep(1 * time.Minute)
+
+			sessionMux.Lock()
+			for id, session := range sessions {
+				if time.Now().After(session.ExpiresAt) {
+					delete(sessions, id)
+				}
+			}
+			sessionMux.Unlock()
+		}
+	}()
 }
