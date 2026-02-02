@@ -21,7 +21,7 @@ CREATE TYPE shopping_item_type AS ENUM (
 
 -- Future, add uniue text ids
 CREATE TABLE shopping_items (
-    id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     item_type shopping_item_type  NOT NULL
 );
@@ -32,13 +32,14 @@ CREATE TABLE shopping_list (
 );
 
 CREATE TABLE households (
-    household_id INt GENERATED ALWAYS AS IDENTITY PRIMARY KEY
+    household_id SERIAL PRIMARY KEY
 );
 
 CREATE TABLE users (
-    id GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    name TEXT,
+    id SERIAL PRIMARY KEY,
+    name TEXT NOt NULL,
     household INT REFERENCES households(household_id),
-    username TEXT,
-    password TEXT
+    username TEXT NOt NULL,
+    password_hash TEXT NOt NULL,
+    created_at TIMESTAMP DEFAULT now()
 );

@@ -1,8 +1,8 @@
 package shoppinglist
 
 type ShoppingItem struct {
-	Name     string
-	ItemType ShoppingItemType
+	Name     string           `db:"name"`
+	ItemType ShoppingItemType `db:"item_type"`
 }
 
 type ShoppingItemType string
