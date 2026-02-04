@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func CreateUserService(ctx context.Context, db *pgxpool.Pool, input UserInput) error {
+func CreateUser(ctx context.Context, db *pgxpool.Pool, input UserInput) error {
 	hashed, err := authentication.HashPassword(input.Password)
 	if err != nil {
 		return err
@@ -25,7 +25,7 @@ func CreateUserService(ctx context.Context, db *pgxpool.Pool, input UserInput) e
 	)
 }
 
-func UpdateUserService(ctx context.Context, db *pgxpool.Pool, input UserInput) error {
+func UpdateUser(ctx context.Context, db *pgxpool.Pool, input UserInput) error {
 	hashed, err := authentication.HashPassword(input.Password)
 	if err != nil {
 		return err

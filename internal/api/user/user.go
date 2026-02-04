@@ -35,7 +35,7 @@ func createUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 		return
 	}
 
-	err := CreateUserService(r.Context(), db, input)
+	err := CreateUser(r.Context(), db, input)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -57,7 +57,7 @@ func updateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 		return
 	}
 
-	err := UpdateUserService(r.Context(), db, input)
+	err := UpdateUser(r.Context(), db, input)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
