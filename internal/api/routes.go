@@ -4,12 +4,12 @@ import (
 	"net/http"
 
 	"weekly-shopping-app/authentication"
+	user "weekly-shopping-app/internal/api/user"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func RegisterRoutes() *http.ServeMux {
-	mux := http.NewServeMux()
-
+func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
 	authentication.RegisterRoutes(mux)
-
-	return mux
+	user.RegisterUserRoutes(mux, db)
 }

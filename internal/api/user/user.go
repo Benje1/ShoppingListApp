@@ -3,20 +3,27 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type UserInput struct {
-	Name     string `json:"name"`
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Name      string `json:"name"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	Household uint   `json:"household"`
 }
 
-func ResisterUserRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/users/create", createUser)
-	mux.HandleFunc("/users/update", updateUser)
+func RegisterUserRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
+	mux.HandleFunc("/users/create", func(w http.ResponseWriter, r *http.Request) {
+		createUser(w, r, db)
+	})
+	mux.HandleFunc("/users/update", func(w http.ResponseWriter, r *http.Request) {
+		updateUser(w, r, db)
+	})
 }
 
-func createUser(w http.ResponseWriter, r *http.Request) {
+func createUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -28,7 +35,7 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := CreateUserService(input)
+	err := CreateUserService(r.Context(), db, input)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -38,7 +45,7 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("User created"))
 }
 
-func updateUser(w http.ResponseWriter, r *http.Request) {
+func updateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -50,7 +57,7 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := UpdateUserService(input)
+	err := UpdateUserService(r.Context(), db, input)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

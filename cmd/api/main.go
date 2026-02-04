@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
 	"weekly-shopping-app/authentication"
+	"weekly-shopping-app/database"
 	"weekly-shopping-app/internal/api"
 
 	"github.com/joho/godotenv"
@@ -13,7 +15,13 @@ import (
 func main() {
 	loadEnv()
 
-	mux := api.RegisterRoutes()
+	pool, err := database.Conn(context.Background())
+	if err != nil {
+		panic(err)
+	}
+
+	mux := http.NewServeMux()
+	api.RegisterRoutes(mux, pool)
 
 	authentication.StartSessionCleanup()
 

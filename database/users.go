@@ -18,7 +18,7 @@ type User struct {
 	CreatedAt    string
 }
 
-func InsertUser(ctx context.Context, db *pgxpool.Pool, name, username, password string, household int) error {
+func InsertUser(ctx context.Context, db *pgxpool.Pool, name, username, password string, household uint) error {
 	hashed, err := authentication.HashPassword(password)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"os"
 
-	"weekly-shopping-app/internal/database"
+	"weekly-shopping-app/database/sqlc"
 	"weekly-shopping-app/shoppinglist"
 
 	"github.com/jackc/pgx/v5/pgxpool"
