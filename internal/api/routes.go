@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"weekly-shopping-app/authentication"
-	user "weekly-shopping-app/internal/api/user"
+	"weekly-shopping-app/user"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )

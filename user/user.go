@@ -1,8 +1,8 @@
-package api
+package user
 
 import (
 	"net/http"
-	"weekly-shopping-app/internal/api"
+	httpapi "weekly-shopping-app/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -25,7 +25,7 @@ func RegisterUserRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
 
 func createUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 	var input UserInput
-	ok := api.DecodeJSON(w, r, http.MethodPost, input)
+	ok := httpapi.DecodeJSON(w, r, http.MethodPost, input)
 	if !ok {
 		return
 	}
@@ -42,7 +42,7 @@ func createUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 
 func updateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 	var input UserInput
-	ok := api.DecodeJSON(w, r, http.MethodPost, input)
+	ok := httpapi.DecodeJSON(w, r, http.MethodPost, input)
 	if !ok {
 		return
 	}
