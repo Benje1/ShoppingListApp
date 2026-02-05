@@ -1,8 +1,8 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
+	"weekly-shopping-app/internal/api"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -24,14 +24,9 @@ func RegisterUserRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
 }
 
 func createUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var input UserInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	ok := api.DecodeJSON(w, r, http.MethodPost, input)
+	if !ok {
 		return
 	}
 
@@ -46,14 +41,9 @@ func createUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 }
 
 func updateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
-	if r.Method != http.MethodPut {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var input UserInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	ok := api.DecodeJSON(w, r, http.MethodPost, input)
+	if !ok {
 		return
 	}
 
