@@ -1,7 +1,11 @@
 package user
 
 import (
+	"context"
 	"net/http"
+
+	"weekly-shopping-app/authentication"
+	"weekly-shopping-app/database"
 	httpapi "weekly-shopping-app/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,23 +18,14 @@ type UserInput struct {
 	Household uint   `json:"household"`
 }
 
-func RegisterUserRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
-	mux.HandleFunc("/users/create", func(w http.ResponseWriter, r *http.Request) {
-		createUser(w, r, db)
-	})
-	mux.HandleFunc("/users/update", func(w http.ResponseWriter, r *http.Request) {
-		updateUser(w, r, db)
-	})
-}
-
-func createUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
+func CreateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 	var input UserInput
 	ok := httpapi.DecodeJSON(w, r, http.MethodPost, input)
 	if !ok {
 		return
 	}
 
-	err := CreateUser(r.Context(), db, input)
+	err := createUser(r.Context(), db, input)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -40,18 +35,42 @@ func createUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 	w.Write([]byte("User created"))
 }
 
-func updateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
+func UpdateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 	var input UserInput
 	ok := httpapi.DecodeJSON(w, r, http.MethodPost, input)
 	if !ok {
 		return
 	}
 
-	err := UpdateUser(r.Context(), db, input)
+	err := updateUser(r.Context(), db, input)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Write([]byte("User updated"))
+}
+
+func createUser(ctx context.Context, db *pgxpool.Pool, input UserInput) error {
+	hash, err := authentication.HashPassword(input.Password)
+	if err != nil {
+		return err
+	}
+
+	return database.InsertUser(ctx, db, input.Name, input.Username, hash, input.Household)
+}
+
+func updateUser(ctx context.Context, db *pgxpool.Pool, input UserInput) error {
+	hashed, err := authentication.HashPassword(input.Password)
+	if err != nil {
+		return err
+	}
+
+	return database.UpdateUser(
+		ctx,
+		db,
+		input.Username,
+		input.Name,
+		hashed,
+	)
 }
