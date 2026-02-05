@@ -85,9 +85,10 @@ type ShoppingList struct {
 }
 
 type User struct {
-	ID        int32
-	Name      pgtype.Text
-	Household pgtype.Int4
-	Username  pgtype.Text
-	Password  pgtype.Text
+	ID           int32
+	Name         string
+	Household    pgtype.Int4
+	Username     string
+	PasswordHash string
+	CreatedAt    pgtype.Timestamp
 }

@@ -10,6 +10,6 @@ import (
 )
 
 func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
-	authentication.RegisterRoutes(mux)
+	authentication.RegisterRoutes(mux, db)
 	user.RegisterUserRoutes(mux, db)
 }

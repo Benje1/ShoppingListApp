@@ -10,19 +10,12 @@ import (
 )
 
 func CreateUser(ctx context.Context, db *pgxpool.Pool, input UserInput) error {
-	hashed, err := authentication.HashPassword(input.Password)
+	hash, err := authentication.HashPassword(input.Password)
 	if err != nil {
 		return err
 	}
 
-	return database.InsertUser(
-		ctx,
-		db,
-		input.Name,
-		input.Username,
-		hashed,
-		input.Household,
-	)
+	return database.InsertUser(ctx, db, input.Name, input.Username, hash, input.Household)
 }
 
 func UpdateUser(ctx context.Context, db *pgxpool.Pool, input UserInput) error {

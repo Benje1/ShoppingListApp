@@ -3,20 +3,25 @@ package authentication
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/login", login)
+func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		login(w, r, db)
+	})
 	mux.HandleFunc("/logout", logout)
 	mux.HandleFunc("/profile", RequireAuth(profile))
 }
 
-func login(w http.ResponseWriter, r *http.Request) {
+func login(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	if username != "admin" || password != "password" {
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+	err := LoginService(r.Context(), db, username, password)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
