@@ -6,12 +6,11 @@ import (
 
 	"weekly-shopping-app/database"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
 
-func LoginService(ctx context.Context, db *pgxpool.Pool, username, password string) error {
-	user, err := database.GetUserByUsername(ctx, db, username)
+func LoginService(ctx context.Context, repo database.UserRepository, username, password string) error {
+	user, err := repo.GetUserByUsername(ctx, username)
 	if err != nil {
 		return errors.New("invalid username or password")
 	}

@@ -3,6 +3,7 @@ package authentication
 import (
 	"fmt"
 	"net/http"
+	"weekly-shopping-app/database"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,7 +20,9 @@ func login(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	err := LoginService(r.Context(), db, username, password)
+	repo := &database.PostgresUserRepo{DB: db}
+
+	err := LoginService(r.Context(), repo, username, password)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
