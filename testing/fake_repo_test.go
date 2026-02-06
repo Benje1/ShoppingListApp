@@ -2,6 +2,7 @@ package authntication_test
 
 import (
 	"context"
+	"errors"
 
 	"weekly-shopping-app/database"
 )
@@ -11,6 +12,9 @@ type FakeUserRepo struct {
 }
 
 func (f *FakeUserRepo) GetUserByUsername(ctx context.Context, username string) (*database.User, error) {
+	if f.User == nil || f.User.Username != username {
+		return nil, errors.New("not found")
+	}
 	return f.User, nil
 }
 

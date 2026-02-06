@@ -10,7 +10,10 @@ import (
 
 func TestLoginService(t *testing.T) {
 	t.Run("test with right password", func(t *testing.T) {
-		hash, _ := authentication.HashPassword("secret")
+		hash, err := authentication.HashPassword("secret")
+		if err != nil {
+			t.Fatalf("could not encrypt password: %v", err.Error())
+		}
 
 		repo := &FakeUserRepo{
 			User: &database.User{
@@ -19,14 +22,17 @@ func TestLoginService(t *testing.T) {
 			},
 		}
 
-		err := authentication.LoginService(context.Background(), repo, "bob", "secret")
+		err = authentication.LoginService(context.Background(), repo, "bob", "secret")
 		if err != nil {
 			t.Fatal("expected login to succeed")
 		}
 	})
 
 	t.Run("test with wrong password", func(t *testing.T) {
-		hash, _ := authentication.HashPassword("secret")
+		hash, err := authentication.HashPassword("secret")
+		if err != nil {
+			t.Fatalf("could not encrypt password: %v", err.Error())
+		}
 
 		repo := &FakeUserRepo{
 			User: &database.User{
@@ -35,7 +41,7 @@ func TestLoginService(t *testing.T) {
 			},
 		}
 
-		err := authentication.LoginService(context.Background(), repo, "bob", "wrong")
+		err = authentication.LoginService(context.Background(), repo, "bob", "wrong")
 		if err == nil {
 			t.Fatal("expected failure")
 		}
