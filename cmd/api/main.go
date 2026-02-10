@@ -8,6 +8,7 @@ import (
 	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/database"
 	"weekly-shopping-app/internal/api"
+	"weekly-shopping-app/internal/api/middleware"
 
 	"github.com/joho/godotenv"
 )
@@ -23,10 +24,12 @@ func main() {
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux, pool)
 
+	handler := middleware.CORS(mux)
+
 	authentication.StartSessionCleanup()
 
 	fmt.Println("Server listening on :8080")
-	fmt.Println(http.ListenAndServe(":8080", mux))
+	fmt.Println(http.ListenAndServe(":8080", handler))
 }
 
 func loadEnv() {
