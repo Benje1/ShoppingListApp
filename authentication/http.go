@@ -1,39 +1,54 @@
 package authentication
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"weekly-shopping-app/database"
+	api "weekly-shopping-app/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
-	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
-		login(w, r, db)
-	})
+	mux.Handle("/login", api.Wrap(LoginHandler(db)))
 	mux.HandleFunc("/logout", logout)
 	mux.HandleFunc("/profile", RequireAuth(profile))
 }
 
-func login(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
-	username := r.FormValue("username")
-	password := r.FormValue("password")
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
 
-	repo := &database.PostgresUserRepo{DB: db}
+func LoginHandler(db *pgxpool.Pool) api.AppHandler {
+	return func(r *http.Request) (any, error) {
+		var req LoginRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			fmt.Println("There is a decoding error")
+			return nil, err
+		}
 
-	err := LoginService(r.Context(), repo, username, password)
+		repo := &database.PostgresUserRepo{DB: db}
+
+		return login(r.Context(), req, repo)
+	}
+}
+
+func login(ctx context, user LoginRequest, repo database.UserRepository) (any, error) {
+	err := LoginService(
+		ctx,
+		repo,
+		user.Username,
+		user.Password,
+	)
+
 	if err != nil {
-		http.Error(w, fmt.Sprintf("username or password incorrect: %s", err.Error()), http.StatusUnauthorized)
-		return
+		return nil, err
 	}
 
-	CreateSession(w, username)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "ok",
-	})
+	return map[string]string{"status": "ok"}, nil
 }
 
 func profile(w http.ResponseWriter, r *http.Request) {
