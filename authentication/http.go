@@ -1,6 +1,7 @@
 package authentication
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"weekly-shopping-app/database"
@@ -24,12 +25,15 @@ func login(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
 
 	err := LoginService(r.Context(), repo, username, password)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		http.Error(w, fmt.Sprintf("username or password incorrect: %s", err.Error()), http.StatusUnauthorized)
 		return
 	}
 
 	CreateSession(w, username)
-	fmt.Fprintln(w, "Logged in")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "ok",
+	})
 }
 
 func profile(w http.ResponseWriter, r *http.Request) {
