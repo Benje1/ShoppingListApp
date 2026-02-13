@@ -24,7 +24,7 @@ func main() {
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux, pool)
 
-	handler := middleware.CORS(mux)
+	handler := middleware.MiddlewareWrapper(mux)
 
 	authentication.StartSessionCleanup()
 
