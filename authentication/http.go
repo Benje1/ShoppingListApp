@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"weekly-shopping-app/database"
-	api "weekly-shopping-app/http"
+	"weekly-shopping-app/internal/api/httpx"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
-	mux.Handle("/login", api.Wrap(LoginHandler(db)))
+func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.AppHandler) http.HandlerFunc) {
+	mux.Handle("/login", wrap(LoginHandler(db)))
 	mux.HandleFunc("/logout", logout)
 	mux.HandleFunc("/profile", RequireAuth(profile))
 }
@@ -22,7 +22,7 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-func LoginHandler(db *pgxpool.Pool) api.AppHandler {
+func LoginHandler(db *pgxpool.Pool) httpx.AppHandler {
 	return func(r *http.Request) (any, error) {
 		var req LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -36,7 +36,7 @@ func LoginHandler(db *pgxpool.Pool) api.AppHandler {
 	}
 }
 
-func login(ctx context, user LoginRequest, repo database.UserRepository) (any, error) {
+func login(ctx context.Context, user LoginRequest, repo database.UserRepository) (any, error) {
 	err := LoginService(
 		ctx,
 		repo,

@@ -6,7 +6,7 @@ import (
 
 	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/database"
-	httpapi "weekly-shopping-app/http"
+	httpapi "weekly-shopping-app/internal/api"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
