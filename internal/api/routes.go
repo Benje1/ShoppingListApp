@@ -14,6 +14,6 @@ import (
 func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
 	apiWrap := httpx.Wrap
 	authentication.RegisterRoutes(mux, db, apiWrap)
-	user.RegisterUserRoutes(mux, db)
-	households.RegisterHouseholdRoutes(mux, db)
+	user.RegisterUserRoutes(mux, db, apiWrap)
+	households.RegisterHouseholdRoutes(mux, db, apiWrap)
 }

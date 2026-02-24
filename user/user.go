@@ -2,11 +2,12 @@ package user
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/database"
-	httpapi "weekly-shopping-app/internal/api"
+	"weekly-shopping-app/internal/api/httpx"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,37 +19,34 @@ type UserInput struct {
 	Household uint   `json:"household"`
 }
 
-func CreateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
+func CreateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) error {
 	var input UserInput
-	ok := httpapi.DecodeJSON(w, r, http.MethodPost, input)
+	ok := httpx.DecodeJSON(w, r, http.MethodPost, input)
 	if !ok {
-		return
+		return errors.New("could not decode json")
 	}
 
 	err := createUser(r.Context(), db, input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte("User created"))
+	return nil
 }
 
-func UpdateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
+func UpdateUser(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) error {
 	var input UserInput
-	ok := httpapi.DecodeJSON(w, r, http.MethodPost, input)
+	ok := httpx.DecodeJSON(w, r, http.MethodPost, input)
 	if !ok {
-		return
+		return errors.New("could not decode json")
 	}
 
 	err := updateUser(r.Context(), db, input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
 
-	w.Write([]byte("User updated"))
+	return nil
 }
 
 func createUser(ctx context.Context, db *pgxpool.Pool, input UserInput) error {

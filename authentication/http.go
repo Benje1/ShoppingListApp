@@ -13,8 +13,8 @@ import (
 
 func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.AppHandler) http.HandlerFunc) {
 	mux.Handle("/login", wrap(LoginHandler(db)))
-	mux.HandleFunc("/logout", logout)
-	mux.HandleFunc("/profile", RequireAuth(profile))
+	mux.Handle("/logout", wrap(LogoutHandler()))
+	mux.Handle("/profile", RequireAuth(wrap(ProfileHandler())))
 }
 
 type LoginRequest struct {
@@ -23,7 +23,7 @@ type LoginRequest struct {
 }
 
 func LoginHandler(db *pgxpool.Pool) httpx.AppHandler {
-	return func(r *http.Request) (any, error) {
+	return func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var req LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			fmt.Println("There is a decoding error")
@@ -51,12 +51,20 @@ func login(ctx context.Context, user LoginRequest, repo database.UserRepository)
 	return map[string]string{"status": "ok"}, nil
 }
 
-func profile(w http.ResponseWriter, r *http.Request) {
-	user := r.Header.Get("X-User")
-	fmt.Fprintf(w, "Welcome %s\n", user)
+func ProfileHandler() httpx.AppHandler {
+	return func(w http.ResponseWriter, r *http.Request) (any, error) {
+		user := r.Header.Get("X-User")
+		return map[string]string{
+			"message": "Welcome " + user,
+		}, nil
+	}
 }
 
-func logout(w http.ResponseWriter, r *http.Request) {
-	DestroySession(w, r)
-	fmt.Fprintln(w, "Logged out")
+func LogoutHandler() httpx.AppHandler {
+	return func(w http.ResponseWriter, r *http.Request) (any, error) {
+		DestroySession(nil, r)
+		return map[string]string{
+			"status": "logged out",
+		}, nil
+	}
 }
