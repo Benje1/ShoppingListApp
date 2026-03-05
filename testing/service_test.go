@@ -17,19 +17,27 @@ func TestLoginService(t *testing.T) {
 	repo := &FakeUserRepo{
 		User: &database.User{
 			Username:     "bob",
+			Name:         "bob",
 			PasswordHash: hash,
 		},
 	}
 
 	t.Run("test with right password", func(t *testing.T) {
-		err = authentication.LoginService(context.Background(), repo, "bob", "secret")
+		var user *database.User
+		user, err = authentication.LoginService(context.Background(), repo, "bob", "secret")
 		if err != nil {
 			t.Fatal("expected login to succeed")
+		}
+		if user.Username != "bob" {
+			t.Fatal("user not expected")
+		}
+		if user.Name != "bob" {
+			t.Fatal("user name not expected")
 		}
 	})
 
 	t.Run("test with wrong password", func(t *testing.T) {
-		err = authentication.LoginService(context.Background(), repo, "bob", "wrong")
+		_, err = authentication.LoginService(context.Background(), repo, "bob", "wrong")
 		if err == nil {
 			t.Fatal("expected failure")
 		}
