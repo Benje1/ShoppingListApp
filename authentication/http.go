@@ -37,8 +37,8 @@ func logoutHandler() func(*http.Request) (any, error) {
 	}
 }
 
-func login(ctx context.Context, user LoginRequest, repo database.UserRepository) (any, error) {
-	err := LoginService(
+func login(ctx context.Context, user LoginRequest, repo database.UserRepository) (*database.User, error) {
+	reUser, err := LoginService(
 		ctx,
 		repo,
 		user.Username,
@@ -49,7 +49,7 @@ func login(ctx context.Context, user LoginRequest, repo database.UserRepository)
 		return nil, err
 	}
 
-	return map[string]string{"status": "ok"}, nil
+	return reUser, nil
 }
 
 func ProfileHandler() httpx.AppHandler {

@@ -9,16 +9,16 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func LoginService(ctx context.Context, repo database.UserRepository, username, password string) error {
+func LoginService(ctx context.Context, repo database.UserRepository, username, password string) (*database.User, error) {
 	user, err := repo.GetUserByUsername(ctx, username)
 	if err != nil {
-		return errors.New("invalid username or password, could not get user")
+		return nil, errors.New("invalid username or password, could not get user")
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	if err != nil {
-		return errors.New("invalid username or password")
+		return nil, errors.New("invalid username or password")
 	}
 
-	return nil
+	return user, nil
 }
