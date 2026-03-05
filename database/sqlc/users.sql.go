@@ -37,10 +37,10 @@ VALUES ($1, $2, $3, $4)
 `
 
 type InsertUserParams struct {
-	Name         string
-	Username     string
-	PasswordHash string
-	Household    pgtype.Int4
+	Name         string      `json:"name"`
+	Username     string      `json:"username"`
+	PasswordHash string      `json:"password_hash"`
+	Household    pgtype.Int4 `json:"household"`
 }
 
 func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) error {
@@ -60,9 +60,9 @@ WHERE username = $3
 `
 
 type UpdateUserParams struct {
-	Name         string
-	PasswordHash string
-	Username     string
+	Name         string `json:"name"`
+	PasswordHash string `json:"password_hash"`
+	Username     string `json:"username"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {

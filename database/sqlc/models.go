@@ -47,8 +47,8 @@ func (e *ShoppingItemType) Scan(src interface{}) error {
 }
 
 type NullShoppingItemType struct {
-	ShoppingItemType ShoppingItemType
-	Valid            bool // Valid is true if ShoppingItemType is not NULL
+	ShoppingItemType ShoppingItemType `json:"shopping_item_type"`
+	Valid            bool             `json:"valid"` // Valid is true if ShoppingItemType is not NULL
 }
 
 // Scan implements the Scanner interface.
@@ -70,25 +70,25 @@ func (ns NullShoppingItemType) Value() (driver.Value, error) {
 }
 
 type Household struct {
-	HouseholdID int32
+	HouseholdID int32 `json:"household_id"`
 }
 
 type ShoppingItem struct {
-	ID       int32
-	Name     string
-	ItemType ShoppingItemType
+	ID       int32            `json:"id"`
+	Name     string           `json:"name"`
+	ItemType ShoppingItemType `json:"item_type"`
 }
 
 type ShoppingList struct {
-	ShoppingItemID pgtype.Int4
-	Quantity       pgtype.Int4
+	ShoppingItemID pgtype.Int4 `json:"shopping_item_id"`
+	Quantity       pgtype.Int4 `json:"quantity"`
 }
 
 type User struct {
-	ID           int32
-	Name         string
-	Household    pgtype.Int4
-	Username     string
-	PasswordHash string
-	CreatedAt    pgtype.Timestamp
+	ID           int32            `json:"id"`
+	Name         string           `json:"name"`
+	Household    pgtype.Int4      `json:"household"`
+	Username     string           `json:"username"`
+	PasswordHash string           `json:"password_hash"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
 }

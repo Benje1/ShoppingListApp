@@ -15,8 +15,8 @@ VALUES ($1, $2)
 `
 
 type CreateShoppingItemParams struct {
-	Name     string
-	ItemType ShoppingItemType
+	Name     string           `json:"name"`
+	ItemType ShoppingItemType `json:"item_type"`
 }
 
 func (q *Queries) CreateShoppingItem(ctx context.Context, arg CreateShoppingItemParams) error {
