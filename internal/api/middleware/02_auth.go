@@ -3,26 +3,34 @@ package middleware
 import (
 	"net/http"
 	"strings"
+
+	"weekly-shopping-app/authentication"
 )
 
 var publicPrefixes = []string{
 	"/login",
 	"/health",
+	"/users/create",
 }
 
 func Auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
+		// Allow public paths without auth
 		if isPublic(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		user := r.Header.Get("X-User")
-		if user == "" {
+		// Check session from cookie
+		user, ok := authentication.GetUser(r)
+		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		// Inject user into header for downstream handlers (optional)
+		r.Header.Set("X-User", user)
 
 		next.ServeHTTP(w, r)
 	})
