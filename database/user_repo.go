@@ -13,10 +13,10 @@ type PostgresUserRepo struct {
 	DB *pgxpool.Pool
 }
 
-func (p *PostgresUserRepo) InsertUser(ctx context.Context, name, username, passwordHash string, household uint) error {
+func (p *PostgresUserRepo) InsertUser(ctx context.Context, name, username, passwordHash string, household uint) (*sqlc.User, error) {
 	q := sqlc.New(p.DB)
 
-	return q.InsertUser(ctx, sqlc.InsertUserParams{
+	user, err := q.InsertUser(ctx, sqlc.InsertUserParams{
 		Name:         name,
 		Username:     username,
 		PasswordHash: passwordHash,
@@ -25,19 +25,21 @@ func (p *PostgresUserRepo) InsertUser(ctx context.Context, name, username, passw
 			Valid: true,
 		},
 	})
+	return &user, err
 }
 
-func (p *PostgresUserRepo) UpdateUser(ctx context.Context, username, name, passwordHash string) error {
+func (p *PostgresUserRepo) UpdateUser(ctx context.Context, username, name, passwordHash string) (*sqlc.User, error) {
 	q := sqlc.New(p.DB)
 
-	return q.UpdateUser(ctx, sqlc.UpdateUserParams{
+	user, err := q.UpdateUser(ctx, sqlc.UpdateUserParams{
 		Username:     username,
 		Name:         name,
 		PasswordHash: passwordHash,
 	})
+	return &user, err
 }
 
-func (p *PostgresUserRepo) GetUserByUsername(ctx context.Context, username string) (*User, error) {
+func (p *PostgresUserRepo) GetUserByUsername(ctx context.Context, username string) (*sqlc.User, error) {
 	q := sqlc.New(p.DB)
 
 	u, err := q.GetUserByUsername(ctx, username)
@@ -45,12 +47,5 @@ func (p *PostgresUserRepo) GetUserByUsername(ctx context.Context, username strin
 		return nil, err
 	}
 
-	return &User{
-		Id:           int(u.ID),
-		Name:         u.Name,
-		Household:    int(u.Household.Int32),
-		Username:     u.Username,
-		PasswordHash: u.PasswordHash,
-		CreatedAt:    u.CreatedAt.Time.String(),
-	}, nil
+	return &u, nil
 }

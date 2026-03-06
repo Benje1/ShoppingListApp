@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"weekly-shopping-app/authentication"
-	"weekly-shopping-app/database"
+	"weekly-shopping-app/database/sqlc"
 )
 
 func TestLoginService(t *testing.T) {

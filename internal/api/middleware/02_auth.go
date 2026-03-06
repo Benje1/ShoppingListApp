@@ -9,6 +9,7 @@ import (
 
 var publicPrefixes = []string{
 	"/login",
+	"/logout",
 	"/health",
 	"/users/create",
 }

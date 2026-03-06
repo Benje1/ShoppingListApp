@@ -10,7 +10,6 @@ func Endpoint[T any](
 	method string,
 	handler func(r *http.Request, input T) (any, error),
 ) AppHandler {
-
 	return func(w http.ResponseWriter, r *http.Request) (any, error) {
 
 		if r.Method != method {

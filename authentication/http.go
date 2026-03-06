@@ -2,16 +2,18 @@ package authentication
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"weekly-shopping-app/database"
+	sqlc "weekly-shopping-app/database/sqlc"
 	"weekly-shopping-app/internal/api/httpx"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.AppHandler) http.HandlerFunc) {
-	mux.Handle("/login", wrap(httpx.Post[LoginRequest](loginHandler(db))))
-	mux.Handle("/logout", wrap(httpx.Get(logoutHandler())))
+	mux.Handle("/login", wrap(loginHandler(db)))
+	mux.Handle("/logout", wrap(logoutHandler()))
 	mux.Handle("/profile", RequireAuth(wrap(ProfileHandler())))
 }
 
@@ -20,24 +22,33 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-func loginHandler(db *pgxpool.Pool) func(*http.Request, LoginRequest) (any, error) {
-	return func(r *http.Request, req LoginRequest) (any, error) {
+func loginHandler(db *pgxpool.Pool) httpx.AppHandler {
+	return func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var req LoginRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return nil, err
+		}
+
 		repo := &database.PostgresUserRepo{DB: db}
-		return login(r.Context(), req, repo)
+		user, err := login(r.Context(), req, repo)
+		if err != nil {
+			return nil, err
+		}
+
+		CreateSession(w, user.Username)
+
+		return user, nil
 	}
 }
 
-func logoutHandler() func(*http.Request) (any, error) {
-	return func(r *http.Request) (any, error) {
-		DestroySession(nil, r)
-
-		return map[string]string{
-			"status": "logged out",
-		}, nil
+func logoutHandler() httpx.AppHandler {
+	return func(w http.ResponseWriter, r *http.Request) (any, error) {
+		DestroySession(w, r)
+		return map[string]string{"message": "logged out"}, nil
 	}
 }
 
-func login(ctx context.Context, user LoginRequest, repo database.UserRepository) (*database.User, error) {
+func login(ctx context.Context, user LoginRequest, repo database.UserRepository) (*sqlc.User, error) {
 	reUser, err := LoginService(
 		ctx,
 		repo,

@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"weekly-shopping-app/database"
+	"github.com/jackc/pgx/v5/pgtype"
+	"weekly-shopping-app/database/sqlc"
 )
 
 type FakeUserRepo struct {
@@ -18,15 +19,15 @@ func (f *FakeUserRepo) GetUserByUsername(ctx context.Context, username string) (
 	return f.User, nil
 }
 
-func (f *FakeUserRepo) InsertUser(ctx context.Context, name, username, passwordHash string, household uint) error {
+func (f *FakeUserRepo) InsertUser(ctx context.Context, name, username, passwordHash string, household uint) (*database.User, error) {
 	f.User = &database.User{
-		Name: name, Username: username, PasswordHash: passwordHash, Household: int(household),
+		Name: name, Username: username, PasswordHash: passwordHash, Household: pgtype.Int4{Int32: int32(household)},
 	}
-	return nil
+	return f.User, nil
 }
 
-func (f *FakeUserRepo) UpdateUser(ctx context.Context, username, name, passwordHash string) error {
+func (f *FakeUserRepo) UpdateUser(ctx context.Context, username, name, passwordHash string) (*database.User, error) {
 	f.User.Name = name
 	f.User.PasswordHash = passwordHash
-	return nil
+	return f.User, nil
 }
