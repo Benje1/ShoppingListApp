@@ -48,19 +48,16 @@ func (p *PostgresUserRepo) UpdateUserPassword(ctx context.Context, username, pas
 	return &user, err
 }
 
-func (p *PostgresUserRepo) UpdateUserHouseholdMemberships(ctx context.Context, userID, householdID int32) error {
+func (p *PostgresUserRepo) UpdateUserHouseholdMemberships(ctx context.Context, userID int32) error {
 	q := sqlc.New(p.DB)
-	return q.UpdateUserHouseholdMemberships(ctx, sqlc.UpdateUserHouseholdMembershipsParams{
-		UserID:      userID,
-		HouseholdID: householdID,
-	})
+	return q.UpdateUserHouseholdMemberships(ctx, userID)
 }
 
-func (p *PostgresUserRepo) GetUserByUsername(ctx context.Context, username string) (*sqlc.User, error) {
+func (p *PostgresUserRepo) GetUserByUsername(ctx context.Context, username string) (*sqlc.GetUserByUsernameRow, error) {
 	q := sqlc.New(p.DB)
-	u, err := q.GetUserByUsername(ctx, username)
+	row, err := q.GetUserByUsername(ctx, username)
 	if err != nil {
 		return nil, err
 	}
-	return &u, nil
+	return &row, nil
 }

@@ -44,32 +44,33 @@ func RegisterShoppingListRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(
 
 func listItemsGet(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 	return func(r *http.Request, _ struct{}) (any, error) {
-		return getItemsFromList(db, r.Context())
+		return getItemsFromList(r.Context(), db)
 	}
 }
 
 func createItemPost(db *pgxpool.Pool) func(*http.Request, sqlc.CreateShoppingItemParams) (any, error) {
 	return func(r *http.Request, input sqlc.CreateShoppingItemParams) (any, error) {
-		if err := addItemToList(r.Context(), db, input); err != nil {
+		item, err := addItemToList(r.Context(), db, input)
+		if err != nil {
 			return nil, err
 		}
-		return map[string]string{"status": "item created"}, nil
+		return item, nil
 	}
 }
 
 func seedItemsPost(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 	return func(r *http.Request, _ struct{}) (any, error) {
-		if err := addItemsToShoppingList(r.Context(), db); err != nil {
+		if err := seedShoppingList(r.Context(), db); err != nil {
 			return nil, err
 		}
 		return map[string]string{"status": "shopping list seeded"}, nil
 	}
 }
 
-func addItemsToShoppingList(ctx context.Context, db *pgxpool.Pool) error {
+func seedShoppingList(ctx context.Context, db *pgxpool.Pool) error {
 	q := sqlc.New(db)
 	for _, item := range ShoppingList {
-		err := q.CreateShoppingItem(ctx, sqlc.CreateShoppingItemParams{
+		_, err := q.CreateShoppingItem(ctx, sqlc.CreateShoppingItemParams{
 			Name:     item.Name,
 			ItemType: sqlc.ShoppingItemType(item.ItemType),
 		})
@@ -80,12 +81,12 @@ func addItemsToShoppingList(ctx context.Context, db *pgxpool.Pool) error {
 	return nil
 }
 
-func addItemToList(ctx context.Context, db *pgxpool.Pool, params sqlc.CreateShoppingItemParams) error {
+func addItemToList(ctx context.Context, db *pgxpool.Pool, params sqlc.CreateShoppingItemParams) (sqlc.ShoppingItem, error) {
 	q := sqlc.New(db)
 	return q.CreateShoppingItem(ctx, params)
 }
 
-func getItemsFromList(db *pgxpool.Pool, ctx context.Context) ([]sqlc.ShoppingItem, error) {
+func getItemsFromList(ctx context.Context, db *pgxpool.Pool) ([]sqlc.ListShoppingItemsRow, error) {
 	q := sqlc.New(db)
 	return q.ListShoppingItems(ctx)
 }

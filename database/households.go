@@ -14,14 +14,20 @@ type PostgresHouseholdRepo struct {
 
 func (p *PostgresHouseholdRepo) InsertHousehold(ctx context.Context, householdID int32) (*sqlc.Household, error) {
 	q := sqlc.New(p.DB)
-	h, err := q.InsertHousehold(ctx, householdID)
-	return &h, err
+	id, err := q.InsertHousehold(ctx, householdID)
+	if err != nil {
+		return nil, err
+	}
+	return &sqlc.Household{HouseholdID: id}, nil
 }
 
 func (p *PostgresHouseholdRepo) GetHousehold(ctx context.Context, householdID int32) (*sqlc.Household, error) {
 	q := sqlc.New(p.DB)
-	h, err := q.GetHousehold(ctx, householdID)
-	return &h, err
+	id, err := q.GetHousehold(ctx, householdID)
+	if err != nil {
+		return nil, err
+	}
+	return &sqlc.Household{HouseholdID: id}, nil
 }
 
 func (p *PostgresHouseholdRepo) DeleteHousehold(ctx context.Context, householdID int32) error {
