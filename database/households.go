@@ -2,37 +2,29 @@ package database
 
 import (
 	"context"
-	"fmt"
+
+	sqlc "weekly-shopping-app/database/sqlc"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Household struct {
-	Id uint
+type PostgresHouseholdRepo struct {
+	DB *pgxpool.Pool
 }
 
-func InsertHousehold(ctx context.Context, db *pgxpool.Pool, householdId uint) error {
-	sql := `
-		INSERT INTO households (household_id)
-		VALUES ($1)
-	`
-
-	_, err := db.Exec(ctx, sql, householdId)
-	if err != nil {
-		return fmt.Errorf("falied to insert household: %w", err)
-	}
-	return nil
+func (p *PostgresHouseholdRepo) InsertHousehold(ctx context.Context, householdID int32) (*sqlc.Household, error) {
+	q := sqlc.New(p.DB)
+	h, err := q.InsertHousehold(ctx, householdID)
+	return &h, err
 }
 
-func DeleteHouseholdById(ctx context.Context, db *pgxpool.Pool, householdId uint) error {
-	sql := `
-		DELETE FROM households
-		WHERE household_id = $1
-	`
+func (p *PostgresHouseholdRepo) GetHousehold(ctx context.Context, householdID int32) (*sqlc.Household, error) {
+	q := sqlc.New(p.DB)
+	h, err := q.GetHousehold(ctx, householdID)
+	return &h, err
+}
 
-	_, err := db.Exec(ctx, sql, householdId)
-	if err != nil {
-		return fmt.Errorf("failed to delete household: %w", err)
-	}
-	return nil
+func (p *PostgresHouseholdRepo) DeleteHousehold(ctx context.Context, householdID int32) error {
+	q := sqlc.New(p.DB)
+	return q.DeleteHousehold(ctx, householdID)
 }

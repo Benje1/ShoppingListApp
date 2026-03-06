@@ -11,51 +11,76 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, name, household, username, password_hash, created_at
-FROM users
-WHERE username = $1
+const addUserToHousehold = `-- name: AddUserToHousehold :exec
+INSERT INTO household_members (household_id, user_id)
+VALUES ($1, $2)
 `
 
-func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
+type AddUserToHouseholdParams struct {
+	HouseholdID int32 `json:"household_id"`
+	UserID      int32 `json:"user_id"`
+}
+
+func (q *Queries) AddUserToHousehold(ctx context.Context, arg AddUserToHouseholdParams) error {
+	_, err := q.db.Exec(ctx, addUserToHousehold, arg.HouseholdID, arg.UserID)
+	return err
+}
+
+const getUserByUsername = `-- name: GetUserByUsername :one
+SELECT 
+    u.id, 
+    u.name, 
+    u.username, 
+    u.password_hash, 
+    u.created_at,
+    ARRAY_AGG(hm.household_id) AS household_ids
+FROM users u
+LEFT JOIN household_members hm ON u.id = hm.user_id
+WHERE u.username = $1
+GROUP BY u.id
+`
+
+type GetUserByUsernameRow struct {
+	ID           int32            `json:"id"`
+	Name         string           `json:"name"`
+	Username     string           `json:"username"`
+	PasswordHash string           `json:"password_hash"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	HouseholdIds interface{}      `json:"household_ids"`
+}
+
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error) {
 	row := q.db.QueryRow(ctx, getUserByUsername, username)
-	var i User
+	var i GetUserByUsernameRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Household,
 		&i.Username,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.HouseholdIds,
 	)
 	return i, err
 }
 
 const insertUser = `-- name: InsertUser :one
-INSERT INTO users (name, username, password_hash, household)
-VALUES ($1, $2, $3, $4)
-RETURNING id, name, household, username, password_hash, created_at
+INSERT INTO users (name, username, password_hash)
+VALUES ($1, $2, $3)
+RETURNING id, name, username, password_hash, created_at
 `
 
 type InsertUserParams struct {
-	Name         string      `json:"name"`
-	Username     string      `json:"username"`
-	PasswordHash string      `json:"password_hash"`
-	Household    pgtype.Int4 `json:"household"`
+	Name         string `json:"name"`
+	Username     string `json:"username"`
+	PasswordHash string `json:"password_hash"`
 }
 
 func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, insertUser,
-		arg.Name,
-		arg.Username,
-		arg.PasswordHash,
-		arg.Household,
-	)
+	row := q.db.QueryRow(ctx, insertUser, arg.Name, arg.Username, arg.PasswordHash)
 	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Household,
 		&i.Username,
 		&i.PasswordHash,
 		&i.CreatedAt,
@@ -63,26 +88,58 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, e
 	return i, err
 }
 
-const updateUser = `-- name: UpdateUser :one
-UPDATE users
-SET name = $1, password_hash = $2
-WHERE username = $3
-RETURNING id, name, household, username, password_hash, created_at
+const updateUserHouseholdMemberships = `-- name: UpdateUserHouseholdMemberships :exec
+DELETE FROM household_members WHERE user_id = $1
 `
 
-type UpdateUserParams struct {
-	Name         string `json:"name"`
-	PasswordHash string `json:"password_hash"`
-	Username     string `json:"username"`
+func (q *Queries) UpdateUserHouseholdMemberships(ctx context.Context, userID int32) error {
+	_, err := q.db.Exec(ctx, updateUserHouseholdMemberships, userID)
+	return err
 }
 
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, updateUser, arg.Name, arg.PasswordHash, arg.Username)
+const updateUserName = `-- name: UpdateUserName :one
+UPDATE users
+SET name = $1
+WHERE username = $2
+RETURNING id, name, username, password_hash, created_at
+`
+
+type UpdateUserNameParams struct {
+	Name     string `json:"name"`
+	Username string `json:"username"`
+}
+
+func (q *Queries) UpdateUserName(ctx context.Context, arg UpdateUserNameParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserName, arg.Name, arg.Username)
 	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Household,
+		&i.Username,
+		&i.PasswordHash,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :one
+UPDATE users
+SET password_hash = $1
+WHERE username = $2
+RETURNING id, name, username, password_hash, created_at
+`
+
+type UpdateUserPasswordParams struct {
+	PasswordHash string `json:"password_hash"`
+	Username     string `json:"username"`
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserPassword, arg.PasswordHash, arg.Username)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
 		&i.Username,
 		&i.PasswordHash,
 		&i.CreatedAt,

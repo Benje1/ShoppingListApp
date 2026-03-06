@@ -9,9 +9,10 @@ import (
 	"context"
 )
 
-const createShoppingItem = `-- name: CreateShoppingItem :exec
+const createShoppingItem = `-- name: CreateShoppingItem :one
 INSERT INTO shopping_items (name, item_type)
 VALUES ($1, $2)
+RETURNING id, name, item_type, text_id
 `
 
 type CreateShoppingItemParams struct {
@@ -19,9 +20,47 @@ type CreateShoppingItemParams struct {
 	ItemType ShoppingItemType `json:"item_type"`
 }
 
-func (q *Queries) CreateShoppingItem(ctx context.Context, arg CreateShoppingItemParams) error {
-	_, err := q.db.Exec(ctx, createShoppingItem, arg.Name, arg.ItemType)
-	return err
+func (q *Queries) CreateShoppingItem(ctx context.Context, arg CreateShoppingItemParams) (ShoppingItem, error) {
+	row := q.db.QueryRow(ctx, createShoppingItem, arg.Name, arg.ItemType)
+	var i ShoppingItem
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ItemType,
+		&i.TextID,
+	)
+	return i, err
+}
+
+const getAllShoppingItems = `-- name: GetAllShoppingItems :many
+SELECT id, name, item_type
+FROM shopping_items
+`
+
+type GetAllShoppingItemsRow struct {
+	ID       int32            `json:"id"`
+	Name     string           `json:"name"`
+	ItemType ShoppingItemType `json:"item_type"`
+}
+
+func (q *Queries) GetAllShoppingItems(ctx context.Context) ([]GetAllShoppingItemsRow, error) {
+	rows, err := q.db.Query(ctx, getAllShoppingItems)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllShoppingItemsRow
+	for rows.Next() {
+		var i GetAllShoppingItemsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.ItemType); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listShoppingItems = `-- name: ListShoppingItems :many
@@ -29,15 +68,21 @@ SELECT id, name, item_type
 FROM shopping_items
 `
 
-func (q *Queries) ListShoppingItems(ctx context.Context) ([]ShoppingItem, error) {
+type ListShoppingItemsRow struct {
+	ID       int32            `json:"id"`
+	Name     string           `json:"name"`
+	ItemType ShoppingItemType `json:"item_type"`
+}
+
+func (q *Queries) ListShoppingItems(ctx context.Context) ([]ListShoppingItemsRow, error) {
 	rows, err := q.db.Query(ctx, listShoppingItems)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ShoppingItem
+	var items []ListShoppingItemsRow
 	for rows.Next() {
-		var i ShoppingItem
+		var i ListShoppingItemsRow
 		if err := rows.Scan(&i.ID, &i.Name, &i.ItemType); err != nil {
 			return nil, err
 		}

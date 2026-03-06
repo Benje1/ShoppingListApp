@@ -3,19 +3,19 @@ INSERT INTO users (name, username, password_hash)
 VALUES ($1, $2, $3)
 RETURNING *;
 
--- name: AddUserToHousehold :none
+-- name: AddUserToHousehold :exec
 INSERT INTO household_members (household_id, user_id)
 VALUES ($1, $2);
 
 -- name: UpdateUserName :one
 UPDATE users
-SET name = $1,
+SET name = $1
 WHERE username = $2
 RETURNING *;
 
 -- name: UpdateUserPassword :one
 UPDATE users
-SET password_hash = $1,
+SET password_hash = $1
 WHERE username = $2
 RETURNING *;
 
@@ -32,8 +32,8 @@ LEFT JOIN household_members hm ON u.id = hm.user_id
 WHERE u.username = $1
 GROUP BY u.id;
 
--- name: UpdateUserHouseholdMemberships :none
+-- name: UpdateUserHouseholdMemberships :exec
 DELETE FROM household_members WHERE user_id = $1;
 
 INSERT INTO household_members (household_id, user_id)
-VALUES ($2, $1);  -- repeat for each household the user should belong to
+VALUES ($2, $1);

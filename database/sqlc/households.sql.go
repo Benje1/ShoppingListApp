@@ -9,12 +9,38 @@ import (
 	"context"
 )
 
-const insertHousehold = `-- name: InsertHousehold :exec
-INSERT INTO households (household_id)
-VALUES ($1)
+const deleteHousehold = `-- name: DeleteHousehold :exec
+DELETE FROM households
+WHERE household_id = $1
 `
 
-func (q *Queries) InsertHousehold(ctx context.Context, householdID int32) error {
-	_, err := q.db.Exec(ctx, insertHousehold, householdID)
+func (q *Queries) DeleteHousehold(ctx context.Context, householdID int32) error {
+	_, err := q.db.Exec(ctx, deleteHousehold, householdID)
 	return err
+}
+
+const getHousehold = `-- name: GetHousehold :one
+SELECT household_id
+FROM households
+WHERE household_id = $1
+`
+
+func (q *Queries) GetHousehold(ctx context.Context, householdID int32) (int32, error) {
+	row := q.db.QueryRow(ctx, getHousehold, householdID)
+	var household_id int32
+	err := row.Scan(&household_id)
+	return household_id, err
+}
+
+const insertHousehold = `-- name: InsertHousehold :one
+INSERT INTO households (household_id)
+VALUES ($1)
+RETURNING household_id
+`
+
+func (q *Queries) InsertHousehold(ctx context.Context, householdID int32) (int32, error) {
+	row := q.db.QueryRow(ctx, insertHousehold, householdID)
+	var household_id int32
+	err := row.Scan(&household_id)
+	return household_id, err
 }

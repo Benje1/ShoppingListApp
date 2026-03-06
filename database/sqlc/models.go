@@ -73,21 +73,29 @@ type Household struct {
 	HouseholdID int32 `json:"household_id"`
 }
 
+type HouseholdMember struct {
+	HouseholdID int32 `json:"household_id"`
+	UserID      int32 `json:"user_id"`
+}
+
 type ShoppingItem struct {
 	ID       int32            `json:"id"`
 	Name     string           `json:"name"`
 	ItemType ShoppingItemType `json:"item_type"`
+	TextID   pgtype.Text      `json:"text_id"`
 }
 
 type ShoppingList struct {
-	ShoppingItemID pgtype.Int4 `json:"shopping_item_id"`
-	Quantity       pgtype.Int4 `json:"quantity"`
+	ID             int32       `json:"id"`
+	ShoppingItemID int32       `json:"shopping_item_id"`
+	Quantity       int32       `json:"quantity"`
+	HouseholdID    pgtype.Int4 `json:"household_id"`
+	UserID         pgtype.Int4 `json:"user_id"`
 }
 
 type User struct {
 	ID           int32            `json:"id"`
 	Name         string           `json:"name"`
-	Household    pgtype.Int4      `json:"household"`
 	Username     string           `json:"username"`
 	PasswordHash string           `json:"password_hash"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
