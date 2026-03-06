@@ -2,6 +2,7 @@ package user
 
 import (
 	"net/http"
+
 	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/internal/api/httpx"
 
@@ -14,42 +15,45 @@ func RegisterUserRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[UserInput]{
 		Path:   "/create",
 		Method: "POST",
-		Public: true, 
+		Public: true,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, UserInput) (any, error) {
 			return createUserPost(db)
 		},
 	})
 
-	httpx.RegisterEndpoint(r, httpx.EndpointConfig[UserInput]{
-		Path:   "/update",
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[UpdateUserInput]{
+		Path:   "/update/name",
 		Method: "POST",
-		Public: false, 
-		Handler: func(db *pgxpool.Pool) func(*http.Request, UserInput) (any, error) {
-			return updateUserPost(db)
+		Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, UpdateUserInput) (any, error) {
+			return updateUserNamePost(db)
+		},
+	})
+
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[UpdateUserInput]{
+		Path:   "/update/password",
+		Method: "POST",
+		Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, UpdateUserInput) (any, error) {
+			return updateUserPasswordPost(db)
 		},
 	})
 }
 
 func createUserPost(db *pgxpool.Pool) func(*http.Request, UserInput) (any, error) {
 	return func(r *http.Request, input UserInput) (any, error) {
-		user, err := createUser(r.Context(), db, input)
-		if err != nil {
-			return nil, err
-		}
-
-		return user, nil
+		return createUser(r.Context(), db, input)
 	}
 }
 
-func updateUserPost(db *pgxpool.Pool) func(*http.Request, UserInput) (any, error) {
-	return func(r *http.Request, input UserInput) (any, error) {
-		// err := updateUser(r.Context(), db, input)
-		// if err != nil {
-		// 	return nil, err
-		// }
+func updateUserNamePost(db *pgxpool.Pool) func(*http.Request, UpdateUserInput) (any, error) {
+	return func(r *http.Request, input UpdateUserInput) (any, error) {
+		return updateUserName(r.Context(), db, input)
+	}
+}
 
-		return map[string]string{
-			"status": "user updated",
-		}, nil
+func updateUserPasswordPost(db *pgxpool.Pool) func(*http.Request, UpdateUserInput) (any, error) {
+	return func(r *http.Request, input UpdateUserInput) (any, error) {
+		return updateUserPassword(r.Context(), db, input)
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"weekly-shopping-app/database/sqlc"
 )
 
@@ -19,15 +18,29 @@ func (f *FakeUserRepo) GetUserByUsername(ctx context.Context, username string) (
 	return f.User, nil
 }
 
-func (f *FakeUserRepo) InsertUser(ctx context.Context, name, username, passwordHash string, household uint) (*database.User, error) {
+func (f *FakeUserRepo) InsertUser(ctx context.Context, name, username, passwordHash string) (*database.User, error) {
 	f.User = &database.User{
-		Name: name, Username: username, PasswordHash: passwordHash, Household: pgtype.Int4{Int32: int32(household)},
+		Name:         name,
+		Username:     username,
+		PasswordHash: passwordHash,
 	}
 	return f.User, nil
 }
 
-func (f *FakeUserRepo) UpdateUser(ctx context.Context, username, name, passwordHash string) (*database.User, error) {
+func (f *FakeUserRepo) AddUserToHousehold(_ context.Context, _, _ int32) error {
+	return nil
+}
+
+func (f *FakeUserRepo) UpdateUserName(ctx context.Context, username, name string) (*database.User, error) {
 	f.User.Name = name
+	return f.User, nil
+}
+
+func (f *FakeUserRepo) UpdateUserPassword(ctx context.Context, username, passwordHash string) (*database.User, error) {
 	f.User.PasswordHash = passwordHash
 	return f.User, nil
+}
+
+func (f *FakeUserRepo) UpdateUserHouseholdMemberships(_ context.Context, _, _ int32) error {
+	return nil
 }

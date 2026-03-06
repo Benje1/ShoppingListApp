@@ -1,37 +1,29 @@
 package households
 
-// import (
-// 	"context"
-// 	"net/http"
+import (
+	"context"
 
-// 	"weekly-shopping-app/database"
-// 	// sqlc "weekly-shopping-app/database/sqlc"
-// 	httpapi "weekly-shopping-app/http"
+	"weekly-shopping-app/database"
+	sqlc "weekly-shopping-app/database/sqlc"
 
-// 	"github.com/jackc/pgx/v5/pgxpool"
-// )
+	"github.com/jackc/pgx/v5/pgxpool"
+)
 
-// type HouseholdInput struct {
-// 	Id uint `json:"id"`
-// }
+type HouseholdInput struct {
+	ID int32 `json:"id"`
+}
 
-// func CreateHousehold(w http.ResponseWriter, r *http.Request, db *pgxpool.Pool) {
-// 	var input HouseholdInput
-// 	ok := httpapi.DecodeJSON(w, r, http.MethodPost, input)
-// 	if !ok {
-// 		return
-// 	}
+func createHousehold(ctx context.Context, db *pgxpool.Pool, input HouseholdInput) (*sqlc.Household, error) {
+	repo := &database.PostgresHouseholdRepo{DB: db}
+	return repo.InsertHousehold(ctx, input.ID)
+}
 
-// 	err := createHousehold(r.Context(), db, input)
-// 	if err != nil {
-// 		http.Error(w, err.Error(), http.StatusInternalServerError)
-// 		return
-// 	}
+func getHousehold(ctx context.Context, db *pgxpool.Pool, id int32) (*sqlc.Household, error) {
+	repo := &database.PostgresHouseholdRepo{DB: db}
+	return repo.GetHousehold(ctx, id)
+}
 
-// 	w.WriteHeader(http.StatusCreated)
-// 	w.Write([]byte("Household created"))
-// }
-
-// func createHousehold(ctx context.Context, db *pgxpool.Pool, input HouseholdInput) error {
-// 	return database.InsertHousehold(ctx, db, input.Id)
-// }
+func deleteHousehold(ctx context.Context, db *pgxpool.Pool, id int32) error {
+	repo := &database.PostgresHouseholdRepo{DB: db}
+	return repo.DeleteHousehold(ctx, id)
+}

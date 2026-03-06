@@ -34,6 +34,5 @@ GROUP BY u.id;
 
 -- name: UpdateUserHouseholdMemberships :exec
 DELETE FROM household_members WHERE user_id = $1;
-
 INSERT INTO household_members (household_id, user_id)
 VALUES ($2, $1);

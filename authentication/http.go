@@ -3,6 +3,7 @@ package authentication
 import (
 	"context"
 	"net/http"
+
 	"weekly-shopping-app/database"
 	sqlc "weekly-shopping-app/database/sqlc"
 	"weekly-shopping-app/internal/api/httpx"
@@ -52,10 +53,10 @@ type LoginRequest struct {
 }
 
 type UserResponse struct {
-	ID        int32  `json:"id"`
-	Name      string `json:"name"`
-	Username  string `json:"username"`
-	Household int32  `json:"household"`
+	ID           int32   `json:"id"`
+	Name         string  `json:"name"`
+	Username     string  `json:"username"`
+	HouseholdIds []int32 `json:"household_ids"`
 }
 
 func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, LoginRequest) (any, error) {
@@ -69,10 +70,10 @@ func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, L
 		CreateSession(w, user.Username)
 
 		return UserResponse{
-			ID:        user.ID,
-			Name:      user.Name,
-			Username:  user.Username,
-			Household: user.Household.Int32,
+			ID:           user.ID,
+			Name:         user.Name,
+			Username:     user.Username,
+			HouseholdIds: user.HouseholdIds,
 		}, nil
 	}
 }
