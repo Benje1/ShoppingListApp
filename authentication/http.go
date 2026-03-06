@@ -2,7 +2,6 @@ package authentication
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"weekly-shopping-app/database"
 	sqlc "weekly-shopping-app/database/sqlc"
@@ -22,13 +21,15 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-func loginHandler(db *pgxpool.Pool) httpx.AppHandler {
-	return func(w http.ResponseWriter, r *http.Request) (any, error) {
-		var req LoginRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			return nil, err
-		}
+type UserResponse struct {
+	ID        int32  `json:"id"`
+	Name      string `json:"name"`
+	Username  string `json:"username"`
+	Household int32  `json:"household"`
+}
 
+func loginHandler(db *pgxpool.Pool) httpx.AppHandler {
+	return httpx.PostWithWriter(func(w http.ResponseWriter, r *http.Request, req LoginRequest) (any, error) {
 		repo := &database.PostgresUserRepo{DB: db}
 		user, err := login(r.Context(), req, repo)
 		if err != nil {
@@ -37,8 +38,13 @@ func loginHandler(db *pgxpool.Pool) httpx.AppHandler {
 
 		CreateSession(w, user.Username)
 
-		return user, nil
-	}
+		return UserResponse{
+			ID:        user.ID,
+			Name:      user.Name,
+			Username:  user.Username,
+			Household: user.Household.Int32,
+		}, nil
+	})
 }
 
 func logoutHandler() httpx.AppHandler {

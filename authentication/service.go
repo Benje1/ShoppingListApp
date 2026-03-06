@@ -13,7 +13,7 @@ import (
 func LoginService(ctx context.Context, repo database.UserRepository, username, password string) (*sqlc.User, error) {
 	user, err := repo.GetUserByUsername(ctx, username)
 	if err != nil {
-		return nil, errors.New("invalid username or password, could not get user")
+		return nil, errors.New("invalid username or password")
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
