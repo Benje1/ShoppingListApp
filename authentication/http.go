@@ -11,9 +11,39 @@ import (
 )
 
 func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.AppHandler) http.HandlerFunc) {
-	mux.Handle("/login", wrap(loginHandler(db)))
-	mux.Handle("/logout", wrap(logoutHandler()))
-	mux.Handle("/profile", RequireAuth(wrap(ProfileHandler())))
+	r := httpx.NewRouter(mux, db, wrap, RequireAuth, "")
+
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[LoginRequest]{
+		Path:   "/login",
+		Method: "POST",
+		Public: true,
+		HandlerWithWriter: func(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, LoginRequest) (any, error) {
+			return loginHandlerFn(db)
+		},
+	})
+
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path:   "/logout",
+		Public: true,
+		HandlerWithWriter: func(_ *pgxpool.Pool) func(http.ResponseWriter, *http.Request, struct{}) (any, error) {
+			return func(w http.ResponseWriter, r *http.Request, _ struct{}) (any, error) {
+				DestroySession(w, r)
+				return map[string]string{"message": "logged out"}, nil
+			}
+		},
+	})
+
+	// Public: false (default) — RegisterEndpoint automatically applies RequireAuth.
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path:   "/profile",
+		Method: "GET",
+		Handler: func(_ *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(r *http.Request, _ struct{}) (any, error) {
+				user := r.Header.Get("X-User")
+				return map[string]string{"message": "Welcome " + user}, nil
+			}
+		},
+	})
 }
 
 type LoginRequest struct {
@@ -28,8 +58,8 @@ type UserResponse struct {
 	Household int32  `json:"household"`
 }
 
-func loginHandler(db *pgxpool.Pool) httpx.AppHandler {
-	return httpx.PostWithWriter(func(w http.ResponseWriter, r *http.Request, req LoginRequest) (any, error) {
+func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, LoginRequest) (any, error) {
+	return func(w http.ResponseWriter, r *http.Request, req LoginRequest) (any, error) {
 		repo := &database.PostgresUserRepo{DB: db}
 		user, err := login(r.Context(), req, repo)
 		if err != nil {
@@ -44,36 +74,9 @@ func loginHandler(db *pgxpool.Pool) httpx.AppHandler {
 			Username:  user.Username,
 			Household: user.Household.Int32,
 		}, nil
-	})
-}
-
-func logoutHandler() httpx.AppHandler {
-	return func(w http.ResponseWriter, r *http.Request) (any, error) {
-		DestroySession(w, r)
-		return map[string]string{"message": "logged out"}, nil
 	}
 }
 
 func login(ctx context.Context, user LoginRequest, repo database.UserRepository) (*sqlc.User, error) {
-	reUser, err := LoginService(
-		ctx,
-		repo,
-		user.Username,
-		user.Password,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return reUser, nil
-}
-
-func ProfileHandler() httpx.AppHandler {
-	return func(w http.ResponseWriter, r *http.Request) (any, error) {
-		user := r.Header.Get("X-User")
-		return map[string]string{
-			"message": "Welcome " + user,
-		}, nil
-	}
+	return LoginService(ctx, repo, user.Username, user.Password)
 }

@@ -2,14 +2,32 @@ package user
 
 import (
 	"net/http"
+	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/internal/api/httpx"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func RegisterUserRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.AppHandler) http.HandlerFunc) {
-	mux.Handle("/users/create", wrap(httpx.Post(createUserPost(db))))
-	mux.Handle("/users/update", wrap(httpx.Post(updateUserPost(db))))
+	r := httpx.NewRouter(mux, db, wrap, authentication.RequireAuth, "/users")
+
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[UserInput]{
+		Path:   "/create",
+		Method: "POST",
+		Public: true, 
+		Handler: func(db *pgxpool.Pool) func(*http.Request, UserInput) (any, error) {
+			return createUserPost(db)
+		},
+	})
+
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[UserInput]{
+		Path:   "/update",
+		Method: "POST",
+		Public: false, 
+		Handler: func(db *pgxpool.Pool) func(*http.Request, UserInput) (any, error) {
+			return updateUserPost(db)
+		},
+	})
 }
 
 func createUserPost(db *pgxpool.Pool) func(*http.Request, UserInput) (any, error) {

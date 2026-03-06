@@ -77,7 +77,6 @@ func GetUser(r *http.Request) (string, bool) {
 		return "", false
 	}
 
-	// Check expiration
 	if time.Now().After(session.ExpiresAt) {
 		delete(sessions, cookie.Value)
 		return "", false
@@ -86,17 +85,19 @@ func GetUser(r *http.Request) (string, bool) {
 	return session.Username, true
 }
 
-func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// RequireAuth is standard http.Handler middleware that rejects unauthenticated
+// requests. RegisterEndpoint applies this automatically when Public is false.
+func RequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, ok := GetUser(r)
 		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		r.Header.Set("X-User", user)
-		next(w, r)
-	}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func StartSessionCleanup() {
