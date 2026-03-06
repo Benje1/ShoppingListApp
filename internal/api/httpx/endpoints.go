@@ -31,8 +31,37 @@ func Endpoint[T any](
 	}
 }
 
+func EndpointWithWriter[T any](
+	method string,
+	handler func(w http.ResponseWriter, r *http.Request, input T) (any, error),
+) AppHandler {
+	return func(w http.ResponseWriter, r *http.Request) (any, error) {
+
+		if r.Method != method {
+			return nil, errors.New("method not allowed")
+		}
+
+		var input T
+
+		if method == http.MethodPost ||
+			method == http.MethodPut ||
+			method == http.MethodPatch {
+
+			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+				return nil, errors.New("invalid JSON body")
+			}
+		}
+
+		return handler(w, r, input)
+	}
+}
+
 func Post[T any](handler func(r *http.Request, input T) (any, error)) AppHandler {
 	return Endpoint(http.MethodPost, handler)
+}
+
+func PostWithWriter[T any](handler func(w http.ResponseWriter, r *http.Request, input T) (any, error)) AppHandler {
+	return EndpointWithWriter(http.MethodPost, handler)
 }
 
 func Put[T any](handler func(r *http.Request, input T) (any, error)) AppHandler {
