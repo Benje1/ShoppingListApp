@@ -23,8 +23,7 @@ func TestLoginService(t *testing.T) {
 	}
 
 	t.Run("test with right password", func(t *testing.T) {
-		var user *database.User
-		user, err = authentication.LoginService(context.Background(), repo, "bob", "secret")
+		user, err := authentication.LoginService(context.Background(), repo, "bob", "secret")
 		if err != nil {
 			t.Fatal("expected login to succeed")
 		}

@@ -12,7 +12,7 @@ type UserRepository interface {
 	UpdateUserName(ctx context.Context, username, name string) (*sqlc.User, error)
 	UpdateUserPassword(ctx context.Context, username, passwordHash string) (*sqlc.User, error)
 	UpdateUserHouseholdMemberships(ctx context.Context, userID, householdID int32) error
-	GetUserByUsername(ctx context.Context, username string) (*sqlc.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*sqlc.GetUserByUsernameRow, error)
 }
 
 type HouseholdRepository interface {

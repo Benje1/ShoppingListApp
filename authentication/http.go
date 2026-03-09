@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"weekly-shopping-app/database"
-	sqlc "weekly-shopping-app/database/sqlc"
 	"weekly-shopping-app/internal/api/httpx"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,7 +33,6 @@ func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.AppHan
 		},
 	})
 
-	// Public: false (default) — RegisterEndpoint automatically applies RequireAuth.
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path:   "/profile",
 		Method: "GET",
@@ -53,10 +51,10 @@ type LoginRequest struct {
 }
 
 type UserResponse struct {
-	ID           int32   `json:"id"`
-	Name         string  `json:"name"`
-	Username     string  `json:"username"`
-	HouseholdIds []int32 `json:"household_ids"`
+	ID           int32       `json:"id"`
+	Name         string      `json:"name"`
+	Username     string      `json:"username"`
+	HouseholdIds interface{} `json:"household_ids"`
 }
 
 func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, LoginRequest) (any, error) {
@@ -66,9 +64,7 @@ func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, L
 		if err != nil {
 			return nil, err
 		}
-
 		CreateSession(w, user.Username)
-
 		return UserResponse{
 			ID:           user.ID,
 			Name:         user.Name,
@@ -78,6 +74,6 @@ func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, L
 	}
 }
 
-func login(ctx context.Context, user LoginRequest, repo database.UserRepository) (*sqlc.User, error) {
+func login(ctx context.Context, user LoginRequest, repo database.UserRepository) (*SafeUser, error) {
 	return LoginService(ctx, repo, user.Username, user.Password)
 }

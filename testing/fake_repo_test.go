@@ -4,18 +4,21 @@ import (
 	"context"
 	"errors"
 
+	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/database/sqlc"
 )
 
 type FakeUserRepo struct {
-	User *database.User
+	User     *database.User
+	GetUser  *database.GetUserByUsernameRow
+	SafeUser *authentication.SafeUser
 }
 
-func (f *FakeUserRepo) GetUserByUsername(ctx context.Context, username string) (*database.User, error) {
+func (f *FakeUserRepo) GetUserByUsername(ctx context.Context, username string) (*database.GetUserByUsernameRow, error) {
 	if f.User == nil || f.User.Username != username {
 		return nil, errors.New("not found")
 	}
-	return f.User, nil
+	return f.GetUser, nil
 }
 
 func (f *FakeUserRepo) InsertUser(ctx context.Context, name, username, passwordHash string) (*database.User, error) {

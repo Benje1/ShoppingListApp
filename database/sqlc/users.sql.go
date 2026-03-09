@@ -89,11 +89,17 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, e
 }
 
 const updateUserHouseholdMemberships = `-- name: UpdateUserHouseholdMemberships :exec
-DELETE FROM household_members WHERE user_id = $1
+INSERT INTO household_members (household_id, user_id)
+VALUES ($2, $1)
 `
 
-func (q *Queries) UpdateUserHouseholdMemberships(ctx context.Context, userID int32) error {
-	_, err := q.db.Exec(ctx, updateUserHouseholdMemberships, userID)
+type UpdateUserHouseholdMembershipsParams struct {
+	UserID      int32 `json:"user_id"`
+	HouseholdID int32 `json:"household_id"`
+}
+
+func (q *Queries) UpdateUserHouseholdMemberships(ctx context.Context, arg UpdateUserHouseholdMembershipsParams) error {
+	_, err := q.db.Exec(ctx, updateUserHouseholdMemberships, arg.UserID, arg.HouseholdID)
 	return err
 }
 
