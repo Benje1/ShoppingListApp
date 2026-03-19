@@ -16,7 +16,16 @@ import (
 func main() {
 	loadEnv()
 
-	pool, err := database.Conn(context.Background())
+	ctx := context.Background()
+
+	// Run database migrations before opening the connection pool.
+	// Already-applied migrations are skipped automatically.
+	if err := database.RunMigrations(ctx); err != nil {
+		panic(fmt.Sprintf("migrations failed: %v", err))
+	}
+	fmt.Println("Migrations applied successfully")
+
+	pool, err := database.Conn(ctx)
 	if err != nil {
 		panic(err)
 	}

@@ -2,7 +2,7 @@ package authentication
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
 	"weekly-shopping-app/database"
 
@@ -21,12 +21,12 @@ type SafeUser struct {
 func LoginService(ctx context.Context, repo database.UserRepository, username, password string) (*SafeUser, error) {
 	user, err := repo.GetUserByUsername(ctx, username)
 	if err != nil {
-		return nil, errors.New("invalid username or password")
+		return nil, fmt.Errorf("invalid username or password, (1): %w", err)
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	if err != nil {
-		return nil, errors.New("invalid username or password")
+		return nil, fmt.Errorf("invalid username or password, (2): %w", err)
 	}
 
 	return &SafeUser{
