@@ -68,3 +68,9 @@ CREATE TABLE household_invites (
                              CHECK (status IN ('pending', 'approved', 'denied')),
     created_at           TIMESTAMP NOT NULL DEFAULT now()
 );
+
+CREATE TABLE meal_cooks (
+    meal_id INT NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (meal_id, user_id)
+);

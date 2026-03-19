@@ -105,6 +105,8 @@ func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 			}
 		},
 	})
+
+	registerPlanAndCookRoutes(r, db)
 }
 
 func queryID(r *http.Request) (int32, error) {
@@ -114,3 +116,113 @@ func queryID(r *http.Request) (int32, error) {
 	}
 	return id, nil
 }
+
+// RegisterMealPlanAndCookRoutes adds the meal plan and cook routes.
+// Called from RegisterMealRoutes after the base meal routes are registered.
+func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
+	// GET /meals/plan — full week plan with meal details
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path: "/plan", Method: "GET", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(r *http.Request, _ struct{}) (any, error) {
+				userID, err := authentication.GetUserID(r)
+				if err != nil {
+					return nil, err
+				}
+				householdID := int32(0)
+				fmt.Sscanf(r.URL.Query().Get("household_id"), "%d", &householdID)
+				return getMealPlanFull(r.Context(), db, userID, householdID)
+			}
+		},
+	})
+
+	// POST /meals/plan/set — assign a meal to a day
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[SetMealPlanInput]{
+		Path: "/plan/set", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, SetMealPlanInput) (any, error) {
+			return func(r *http.Request, input SetMealPlanInput) (any, error) {
+				userID, err := authentication.GetUserID(r)
+				if err != nil {
+					return nil, err
+				}
+				return setMealPlanDay(r.Context(), db, userID, input)
+			}
+		},
+	})
+
+	// POST /meals/plan/clear — remove meal from a day
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[ClearMealPlanInput]{
+		Path: "/plan/clear", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, ClearMealPlanInput) (any, error) {
+			return func(r *http.Request, input ClearMealPlanInput) (any, error) {
+				userID, err := authentication.GetUserID(r)
+				if err != nil {
+					return nil, err
+				}
+				if err := clearMealPlanDay(r.Context(), db, userID, input); err != nil {
+					return nil, err
+				}
+				return map[string]string{"status": "cleared"}, nil
+			}
+		},
+	})
+
+	// GET /meals/cooks?id=<meal_id> — list cooks for a meal
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path: "/cooks", Method: "GET", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(r *http.Request, _ struct{}) (any, error) {
+				id, err := queryID(r)
+				if err != nil {
+					return nil, err
+				}
+				return getMealCooks(r.Context(), db, id)
+			}
+		},
+	})
+
+	// POST /meals/cooks/add?id=<meal_id> — add a cook to a meal
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[AddCookInput]{
+		Path: "/cooks/add", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, AddCookInput) (any, error) {
+			return func(r *http.Request, input AddCookInput) (any, error) {
+				id, err := queryID(r)
+				if err != nil {
+					return nil, err
+				}
+				return addMealCook(r.Context(), db, id, input.UserID)
+			}
+		},
+	})
+
+	// POST /meals/cooks/remove?id=<meal_id> — remove a cook from a meal
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[AddCookInput]{
+		Path: "/cooks/remove", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, AddCookInput) (any, error) {
+			return func(r *http.Request, input AddCookInput) (any, error) {
+				id, err := queryID(r)
+				if err != nil {
+					return nil, err
+				}
+				return removeMealCook(r.Context(), db, id, input.UserID)
+			}
+		},
+	})
+
+	// GET /meals/for-cook?user_id= — meals a specific user can cook
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path: "/for-cook", Method: "GET", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(r *http.Request, _ struct{}) (any, error) {
+				var userID int32
+				fmt.Sscanf(r.URL.Query().Get("user_id"), "%d", &userID)
+				if userID == 0 {
+					return nil, fmt.Errorf("user_id is required")
+				}
+				return getMealsForCook(r.Context(), db, userID)
+			}
+		},
+	})
+}
+
+type Router = httpx.Router

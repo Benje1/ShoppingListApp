@@ -309,3 +309,164 @@ func (q *Queries) UpdateMealIngredient(ctx context.Context, arg UpdateMealIngred
 	)
 	return i, err
 }
+
+// ── Meal cooks ────────────────────────────────────────────────────────────────
+
+const addMealCook = `INSERT INTO meal_cooks (meal_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`
+
+func (q *Queries) AddMealCook(ctx context.Context, mealID, userID int32) error {
+	_, err := q.db.Exec(ctx, addMealCook, mealID, userID)
+	return err
+}
+
+const removeMealCook = `DELETE FROM meal_cooks WHERE meal_id = $1 AND user_id = $2`
+
+func (q *Queries) RemoveMealCook(ctx context.Context, mealID, userID int32) error {
+	_, err := q.db.Exec(ctx, removeMealCook, mealID, userID)
+	return err
+}
+
+const getMealCooks = `
+SELECT u.id, u.name, u.username
+FROM meal_cooks mc
+JOIN users u ON u.id = mc.user_id
+WHERE mc.meal_id = $1`
+
+type MealCookRow struct {
+	ID       int32  `json:"id"`
+	Name     string `json:"name"`
+	Username string `json:"username"`
+}
+
+func (q *Queries) GetMealCooks(ctx context.Context, mealID int32) ([]MealCookRow, error) {
+	rows, err := q.db.Query(ctx, getMealCooks, mealID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MealCookRow
+	for rows.Next() {
+		var i MealCookRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
+// ── Meal plan (full) ──────────────────────────────────────────────────────────
+
+const getMealPlanFull = `
+SELECT
+    mp.id, mp.day_name, mp.meal_id, mp.cook_user_id, mp.updated_at,
+    m.name AS meal_name, m.default_portions, m.description AS meal_description,
+    cu.name AS cook_name, cu.username AS cook_username
+FROM meal_plan mp
+LEFT JOIN meals m ON m.id = mp.meal_id
+LEFT JOIN users cu ON cu.id = mp.cook_user_id
+WHERE mp.household_id = $1 OR mp.user_id = $2
+ORDER BY CASE mp.day_name
+    WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
+    WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6
+    WHEN 'Sunday' THEN 7 ELSE 8 END`
+
+type GetMealPlanFullRow struct {
+	ID              int32            `json:"id"`
+	DayName         string           `json:"day_name"`
+	MealID          pgtype.Int4      `json:"meal_id"`
+	CookUserID      pgtype.Int4      `json:"cook_user_id"`
+	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
+	MealName        pgtype.Text      `json:"meal_name"`
+	DefaultPortions pgtype.Int4      `json:"default_portions"`
+	MealDescription pgtype.Text      `json:"meal_description"`
+	CookName        pgtype.Text      `json:"cook_name"`
+	CookUsername    pgtype.Text      `json:"cook_username"`
+}
+
+func (q *Queries) GetMealPlanFull(ctx context.Context, householdID, userID pgtype.Int4) ([]GetMealPlanFullRow, error) {
+	rows, err := q.db.Query(ctx, getMealPlanFull, householdID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMealPlanFullRow
+	for rows.Next() {
+		var i GetMealPlanFullRow
+		if err := rows.Scan(
+			&i.ID, &i.DayName, &i.MealID, &i.CookUserID, &i.UpdatedAt,
+			&i.MealName, &i.DefaultPortions, &i.MealDescription,
+			&i.CookName, &i.CookUsername,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
+const setMealPlanDay = `
+INSERT INTO meal_plan (day_name, meal_id, cook_user_id, household_id, user_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
+ON CONFLICT (day_name, household_id, user_id)
+DO UPDATE SET meal_id = EXCLUDED.meal_id, cook_user_id = EXCLUDED.cook_user_id, updated_at = now()
+RETURNING id, day_name, meal_id, cook_user_id, household_id, user_id, updated_at, meal_name`
+
+type SetMealPlanDayParams struct {
+	DayName     string      `json:"day_name"`
+	MealID      pgtype.Int4 `json:"meal_id"`
+	CookUserID  pgtype.Int4 `json:"cook_user_id"`
+	HouseholdID pgtype.Int4 `json:"household_id"`
+	UserID      pgtype.Int4 `json:"user_id"`
+}
+
+type MealPlanDayResult struct {
+	ID          int32            `json:"id"`
+	DayName     string           `json:"day_name"`
+	MealID      pgtype.Int4      `json:"meal_id"`
+	CookUserID  pgtype.Int4      `json:"cook_user_id"`
+	HouseholdID pgtype.Int4      `json:"household_id"`
+	UserID      pgtype.Int4      `json:"user_id"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	MealName    pgtype.Text      `json:"meal_name"`
+}
+
+func (q *Queries) SetMealPlanDay(ctx context.Context, arg SetMealPlanDayParams) (MealPlanDayResult, error) {
+	row := q.db.QueryRow(ctx, setMealPlanDay,
+		arg.DayName, arg.MealID, arg.CookUserID, arg.HouseholdID, arg.UserID)
+	var i MealPlanDayResult
+	err := row.Scan(&i.ID, &i.DayName, &i.MealID, &i.CookUserID, &i.HouseholdID, &i.UserID, &i.UpdatedAt, &i.MealName)
+	return i, err
+}
+
+const clearMealPlanDay = `
+DELETE FROM meal_plan WHERE day_name = $1 AND (household_id = $2 OR user_id = $3)`
+
+func (q *Queries) ClearMealPlanDay(ctx context.Context, dayName string, householdID, userID pgtype.Int4) error {
+	_, err := q.db.Exec(ctx, clearMealPlanDay, dayName, householdID, userID)
+	return err
+}
+
+const getMealsForCook = `
+SELECT m.id, m.name, m.description, m.default_portions
+FROM meals m
+JOIN meal_cooks mc ON mc.meal_id = m.id
+WHERE mc.user_id = $1
+ORDER BY m.name`
+
+func (q *Queries) GetMealsForCook(ctx context.Context, userID int32) ([]Meal, error) {
+	rows, err := q.db.Query(ctx, getMealsForCook, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Meal
+	for rows.Next() {
+		var i Meal
+		if err := rows.Scan(&i.ID, &i.Name, &i.Description, &i.DefaultPortions); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
