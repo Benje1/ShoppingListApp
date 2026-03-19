@@ -7,54 +7,36 @@ package database
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteHousehold = `-- name: DeleteHousehold :exec
-DELETE FROM households
-WHERE household_id = $1
-`
+// ── Household CRUD ────────────────────────────────────────────────────────────
 
-func (q *Queries) DeleteHousehold(ctx context.Context, householdID int32) error {
-	_, err := q.db.Exec(ctx, deleteHousehold, householdID)
-	return err
+const insertHousehold = `INSERT INTO households (num_people, name) VALUES ($1, $2) RETURNING household_id, num_people, name`
+
+type InsertHouseholdParams struct {
+	NumPeople int32       `json:"num_people"`
+	Name      pgtype.Text `json:"name"`
 }
 
-const getHousehold = `-- name: GetHousehold :one
-SELECT household_id, num_people FROM households
-WHERE household_id = $1
-`
+func (q *Queries) InsertHousehold(ctx context.Context, arg InsertHouseholdParams) (Household, error) {
+	row := q.db.QueryRow(ctx, insertHousehold, arg.NumPeople, arg.Name)
+	var i Household
+	err := row.Scan(&i.HouseholdID, &i.NumPeople, &i.Name)
+	return i, err
+}
+
+const getHousehold = `SELECT household_id, num_people, name FROM households WHERE household_id = $1`
 
 func (q *Queries) GetHousehold(ctx context.Context, householdID int32) (Household, error) {
 	row := q.db.QueryRow(ctx, getHousehold, householdID)
 	var i Household
-	err := row.Scan(&i.HouseholdID, &i.NumPeople)
+	err := row.Scan(&i.HouseholdID, &i.NumPeople, &i.Name)
 	return i, err
 }
 
-const insertHousehold = `-- name: InsertHousehold :one
-INSERT INTO households (household_id, num_people)
-VALUES ($1, $2)
-RETURNING household_id, num_people
-`
-
-type InsertHouseholdParams struct {
-	HouseholdID int32 `json:"household_id"`
-	NumPeople   int32 `json:"num_people"`
-}
-
-func (q *Queries) InsertHousehold(ctx context.Context, arg InsertHouseholdParams) (Household, error) {
-	row := q.db.QueryRow(ctx, insertHousehold, arg.HouseholdID, arg.NumPeople)
-	var i Household
-	err := row.Scan(&i.HouseholdID, &i.NumPeople)
-	return i, err
-}
-
-const updateHouseholdNumPeople = `-- name: UpdateHouseholdNumPeople :one
-UPDATE households
-SET num_people = $2
-WHERE household_id = $1
-RETURNING household_id, num_people
-`
+const updateHouseholdNumPeople = `UPDATE households SET num_people = $2 WHERE household_id = $1 RETURNING household_id, num_people, name`
 
 type UpdateHouseholdNumPeopleParams struct {
 	HouseholdID int32 `json:"household_id"`
@@ -64,6 +46,143 @@ type UpdateHouseholdNumPeopleParams struct {
 func (q *Queries) UpdateHouseholdNumPeople(ctx context.Context, arg UpdateHouseholdNumPeopleParams) (Household, error) {
 	row := q.db.QueryRow(ctx, updateHouseholdNumPeople, arg.HouseholdID, arg.NumPeople)
 	var i Household
-	err := row.Scan(&i.HouseholdID, &i.NumPeople)
+	err := row.Scan(&i.HouseholdID, &i.NumPeople, &i.Name)
+	return i, err
+}
+
+const renameHousehold = `UPDATE households SET name = $2 WHERE household_id = $1 RETURNING household_id, num_people, name`
+
+type RenameHouseholdParams struct {
+	HouseholdID int32       `json:"household_id"`
+	Name        pgtype.Text `json:"name"`
+}
+
+func (q *Queries) RenameHousehold(ctx context.Context, arg RenameHouseholdParams) (Household, error) {
+	row := q.db.QueryRow(ctx, renameHousehold, arg.HouseholdID, arg.Name)
+	var i Household
+	err := row.Scan(&i.HouseholdID, &i.NumPeople, &i.Name)
+	return i, err
+}
+
+const deleteHousehold = `DELETE FROM households WHERE household_id = $1`
+
+func (q *Queries) DeleteHousehold(ctx context.Context, householdID int32) error {
+	_, err := q.db.Exec(ctx, deleteHousehold, householdID)
+	return err
+}
+
+// ── Members ───────────────────────────────────────────────────────────────────
+
+const getHouseholdMembers = `
+SELECT u.id, u.name, u.username
+FROM users u
+JOIN household_members hm ON hm.user_id = u.id
+WHERE hm.household_id = $1`
+
+type GetHouseholdMembersRow struct {
+	ID       int32  `json:"id"`
+	Name     string `json:"name"`
+	Username string `json:"username"`
+}
+
+func (q *Queries) GetHouseholdMembers(ctx context.Context, householdID int32) ([]GetHouseholdMembersRow, error) {
+	rows, err := q.db.Query(ctx, getHouseholdMembers, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetHouseholdMembersRow
+	for rows.Next() {
+		var i GetHouseholdMembersRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
+// ── Invites ───────────────────────────────────────────────────────────────────
+
+const createInvite = `INSERT INTO household_invites (household_id, invite_code, requested_by_user_id) VALUES ($1, $2, $3) RETURNING id, household_id, invite_code, requested_by_user_id, status, created_at`
+
+type CreateInviteParams struct {
+	HouseholdID       int32  `json:"household_id"`
+	InviteCode        string `json:"invite_code"`
+	RequestedByUserID int32  `json:"requested_by_user_id"`
+}
+
+func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (HouseholdInvite, error) {
+	row := q.db.QueryRow(ctx, createInvite, arg.HouseholdID, arg.InviteCode, arg.RequestedByUserID)
+	var i HouseholdInvite
+	err := row.Scan(&i.ID, &i.HouseholdID, &i.InviteCode, &i.RequestedByUserID, &i.Status, &i.CreatedAt)
+	return i, err
+}
+
+const getInviteByCode = `SELECT id, household_id, invite_code, requested_by_user_id, status, created_at FROM household_invites WHERE invite_code = $1`
+
+func (q *Queries) GetInviteByCode(ctx context.Context, inviteCode string) (HouseholdInvite, error) {
+	row := q.db.QueryRow(ctx, getInviteByCode, inviteCode)
+	var i HouseholdInvite
+	err := row.Scan(&i.ID, &i.HouseholdID, &i.InviteCode, &i.RequestedByUserID, &i.Status, &i.CreatedAt)
+	return i, err
+}
+
+const getInviteByID = `SELECT id, household_id, invite_code, requested_by_user_id, status, created_at FROM household_invites WHERE id = $1`
+
+func (q *Queries) GetInviteByID(ctx context.Context, id int32) (HouseholdInvite, error) {
+	row := q.db.QueryRow(ctx, getInviteByID, id)
+	var i HouseholdInvite
+	err := row.Scan(&i.ID, &i.HouseholdID, &i.InviteCode, &i.RequestedByUserID, &i.Status, &i.CreatedAt)
+	return i, err
+}
+
+const getPendingInvitesForHousehold = `
+SELECT hi.id, hi.household_id, hi.invite_code, hi.requested_by_user_id, hi.status, hi.created_at,
+       u.name AS requester_name, u.username AS requester_username
+FROM household_invites hi
+JOIN users u ON u.id = hi.requested_by_user_id
+WHERE hi.household_id = $1 AND hi.status = 'pending'
+ORDER BY hi.created_at`
+
+type GetPendingInvitesForHouseholdRow struct {
+	ID                 int32            `json:"id"`
+	HouseholdID        int32            `json:"household_id"`
+	InviteCode         string           `json:"invite_code"`
+	RequestedByUserID  int32            `json:"requested_by_user_id"`
+	Status             string           `json:"status"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	RequesterName      string           `json:"requester_name"`
+	RequesterUsername  string           `json:"requester_username"`
+}
+
+func (q *Queries) GetPendingInvitesForHousehold(ctx context.Context, householdID int32) ([]GetPendingInvitesForHouseholdRow, error) {
+	rows, err := q.db.Query(ctx, getPendingInvitesForHousehold, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPendingInvitesForHouseholdRow
+	for rows.Next() {
+		var i GetPendingInvitesForHouseholdRow
+		if err := rows.Scan(&i.ID, &i.HouseholdID, &i.InviteCode, &i.RequestedByUserID, &i.Status, &i.CreatedAt, &i.RequesterName, &i.RequesterUsername); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
+const respondToInvite = `UPDATE household_invites SET status = $2 WHERE id = $1 RETURNING id, household_id, invite_code, requested_by_user_id, status, created_at`
+
+type RespondToInviteParams struct {
+	ID     int32  `json:"id"`
+	Status string `json:"status"`
+}
+
+func (q *Queries) RespondToInvite(ctx context.Context, arg RespondToInviteParams) (HouseholdInvite, error) {
+	row := q.db.QueryRow(ctx, respondToInvite, arg.ID, arg.Status)
+	var i HouseholdInvite
+	err := row.Scan(&i.ID, &i.HouseholdID, &i.InviteCode, &i.RequestedByUserID, &i.Status, &i.CreatedAt)
 	return i, err
 }

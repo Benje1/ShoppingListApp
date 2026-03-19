@@ -3,6 +3,8 @@ package authentication
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -15,6 +17,7 @@ var (
 
 type Session struct {
 	Username  string
+	UserID    int32
 	ExpiresAt time.Time
 }
 
@@ -24,11 +27,12 @@ func newSessionID() string {
 	return hex.EncodeToString(b)
 }
 
-func CreateSession(w http.ResponseWriter, username string) {
+func CreateSession(w http.ResponseWriter, username string, userID int32) {
 	sessionID := newSessionID()
 
 	session := Session{
 		Username:  username,
+		UserID:    userID,
 		ExpiresAt: time.Now().Add(30 * time.Minute),
 	}
 
@@ -83,6 +87,31 @@ func GetUser(r *http.Request) (string, bool) {
 	}
 
 	return session.Username, true
+}
+
+// GetUserID returns the numeric ID of the currently authenticated user.
+// The ID is stored in the session at login time.
+func GetUserID(r *http.Request) (int32, error) {
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		return 0, errors.New("not authenticated")
+	}
+
+	sessionMux.Lock()
+	defer sessionMux.Unlock()
+
+	session, ok := sessions[cookie.Value]
+	if !ok {
+		return 0, errors.New("session not found")
+	}
+	if time.Now().After(session.ExpiresAt) {
+		delete(sessions, cookie.Value)
+		return 0, errors.New("session expired")
+	}
+	if session.UserID == 0 {
+		return 0, fmt.Errorf("user ID not in session (re-login required)")
+	}
+	return session.UserID, nil
 }
 
 // RequireAuth is standard http.Handler middleware that rejects unauthenticated

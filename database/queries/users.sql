@@ -20,15 +20,22 @@ WHERE username = $2
 RETURNING *;
 
 -- name: GetUserByUsername :one
-SELECT 
-    u.id, 
-    u.name, 
-    u.username, 
-    u.password_hash, 
+SELECT
+    u.id,
+    u.name,
+    u.username,
+    u.password_hash,
     u.created_at,
-    ARRAY_AGG(hm.household_id) AS household_ids
+    COALESCE(
+        JSON_AGG(
+            JSON_BUILD_OBJECT('household_id', h.household_id, 'name', COALESCE(h.name, ''))
+            ORDER BY h.household_id
+        ) FILTER (WHERE h.household_id IS NOT NULL),
+        '[]'
+    ) AS households
 FROM users u
 LEFT JOIN household_members hm ON u.id = hm.user_id
+LEFT JOIN households h ON h.household_id = hm.household_id
 WHERE u.username = $1
 GROUP BY u.id;
 

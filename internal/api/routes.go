@@ -6,6 +6,7 @@ import (
 	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/households"
 	"weekly-shopping-app/internal/api/httpx"
+	"weekly-shopping-app/meals"
 	shoppinglist "weekly-shopping-app/shoppingList"
 	"weekly-shopping-app/user"
 
@@ -18,4 +19,5 @@ func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool) {
 	user.RegisterUserRoutes(mux, db, apiWrap)
 	households.RegisterHouseholdRoutes(mux, db, apiWrap)
 	shoppinglist.RegisterShoppingListRoutes(mux, db, apiWrap)
+	meals.RegisterMealRoutes(mux, db, apiWrap)
 }

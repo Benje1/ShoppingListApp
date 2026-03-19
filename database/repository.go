@@ -16,7 +16,14 @@ type UserRepository interface {
 }
 
 type HouseholdRepository interface {
-	InsertHousehold(ctx context.Context, householdID int32) (*sqlc.Household, error)
+	InsertHousehold(ctx context.Context, numPeople int32, name string) (*sqlc.Household, error)
 	GetHousehold(ctx context.Context, householdID int32) (*sqlc.Household, error)
+	RenameHousehold(ctx context.Context, householdID int32, name string) (*sqlc.Household, error)
 	DeleteHousehold(ctx context.Context, householdID int32) error
+	GetHouseholdMembers(ctx context.Context, householdID int32) ([]sqlc.GetHouseholdMembersRow, error)
+	CreateInvite(ctx context.Context, householdID int32, code string, userID int32) (*sqlc.HouseholdInvite, error)
+	GetInviteByCode(ctx context.Context, code string) (*sqlc.HouseholdInvite, error)
+	GetInviteByID(ctx context.Context, id int32) (*sqlc.HouseholdInvite, error)
+	GetPendingInvites(ctx context.Context, householdID int32) ([]sqlc.GetPendingInvitesForHouseholdRow, error)
+	RespondToInvite(ctx context.Context, inviteID int32, status string) (*sqlc.HouseholdInvite, error)
 }

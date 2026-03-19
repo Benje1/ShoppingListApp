@@ -48,10 +48,9 @@ func (e *ShoppingItemType) Scan(src interface{}) error {
 
 type NullShoppingItemType struct {
 	ShoppingItemType ShoppingItemType `json:"shopping_item_type"`
-	Valid            bool             `json:"valid"` // Valid is true if ShoppingItemType is not NULL
+	Valid            bool             `json:"valid"`
 }
 
-// Scan implements the Scanner interface.
 func (ns *NullShoppingItemType) Scan(value interface{}) error {
 	if value == nil {
 		ns.ShoppingItemType, ns.Valid = "", false
@@ -61,7 +60,6 @@ func (ns *NullShoppingItemType) Scan(value interface{}) error {
 	return ns.ShoppingItemType.Scan(value)
 }
 
-// Value implements the driver Valuer interface.
 func (ns NullShoppingItemType) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
@@ -70,8 +68,18 @@ func (ns NullShoppingItemType) Value() (driver.Value, error) {
 }
 
 type Household struct {
-	HouseholdID int32 `json:"household_id"`
-	NumPeople   int32 `json:"num_people"`
+	HouseholdID int32       `json:"household_id"`
+	NumPeople   int32       `json:"num_people"`
+	Name        pgtype.Text `json:"name"`
+}
+
+type HouseholdInvite struct {
+	ID                 int32            `json:"id"`
+	HouseholdID        int32            `json:"household_id"`
+	InviteCode         string           `json:"invite_code"`
+	RequestedByUserID  int32            `json:"requested_by_user_id"`
+	Status             string           `json:"status"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
 }
 
 type HouseholdMember struct {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"weekly-shopping-app/database"
+	sqlc "weekly-shopping-app/database/sqlc"
 	"weekly-shopping-app/internal/api/httpx"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -50,11 +51,15 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-type UserResponse struct {
-	ID           int32       `json:"id"`
-	Name         string      `json:"name"`
-	Username     string      `json:"username"`
-	HouseholdIds interface{} `json:"household_ids"`
+// LoginResponse is what the frontend receives on successful login.
+// Households is the full list of households the user belongs to, each with
+// their ID and display name, so the frontend can populate the selector
+// without any extra API calls.
+type LoginResponse struct {
+	ID         int32                `json:"id"`
+	Name       string               `json:"name"`
+	Username   string               `json:"username"`
+	Households []sqlc.UserHousehold `json:"households"`
 }
 
 func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, LoginRequest) (any, error) {
@@ -64,12 +69,12 @@ func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, L
 		if err != nil {
 			return nil, err
 		}
-		CreateSession(w, user.Username)
-		return UserResponse{
-			ID:           user.ID,
-			Name:         user.Name,
-			Username:     user.Username,
-			HouseholdIds: user.HouseholdIds,
+		CreateSession(w, user.Username, user.ID)
+		return LoginResponse{
+			ID:         user.ID,
+			Name:       user.Name,
+			Username:   user.Username,
+			Households: user.Households,
 		}, nil
 	}
 }

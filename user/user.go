@@ -10,18 +10,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// UserInput no longer accepts a household_id — users join households via invite codes.
 type UserInput struct {
-	Name        string `json:"name"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	HouseholdID int32  `json:"household_id"`
+	Name     string `json:"name"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type UpdateUserInput struct {
-	Username    string `json:"username"`
-	Name        string `json:"name"`
-	Password    string `json:"password"`
-	HouseholdID int32  `json:"household_id"`
+	Username string `json:"username"`
+	Name     string `json:"name"`
+	Password string `json:"password"`
 }
 
 func createUser(ctx context.Context, db *pgxpool.Pool, input UserInput) (*sqlc.User, error) {
@@ -29,21 +28,8 @@ func createUser(ctx context.Context, db *pgxpool.Pool, input UserInput) (*sqlc.U
 	if err != nil {
 		return nil, err
 	}
-
 	repo := &database.PostgresUserRepo{DB: db}
-
-	user, err := repo.InsertUser(ctx, input.Name, input.Username, hash)
-	if err != nil {
-		return nil, err
-	}
-
-	if input.HouseholdID != 0 {
-		if err := repo.AddUserToHousehold(ctx, user.ID, input.HouseholdID); err != nil {
-			return nil, err
-		}
-	}
-
-	return user, nil
+	return repo.InsertUser(ctx, input.Name, input.Username, hash)
 }
 
 func updateUserName(ctx context.Context, db *pgxpool.Pool, input UpdateUserInput) (*sqlc.User, error) {
