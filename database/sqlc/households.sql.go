@@ -20,27 +20,50 @@ func (q *Queries) DeleteHousehold(ctx context.Context, householdID int32) error 
 }
 
 const getHousehold = `-- name: GetHousehold :one
-SELECT household_id
-FROM households
+SELECT household_id, num_people FROM households
 WHERE household_id = $1
 `
 
-func (q *Queries) GetHousehold(ctx context.Context, householdID int32) (int32, error) {
+func (q *Queries) GetHousehold(ctx context.Context, householdID int32) (Household, error) {
 	row := q.db.QueryRow(ctx, getHousehold, householdID)
-	var household_id int32
-	err := row.Scan(&household_id)
-	return household_id, err
+	var i Household
+	err := row.Scan(&i.HouseholdID, &i.NumPeople)
+	return i, err
 }
 
 const insertHousehold = `-- name: InsertHousehold :one
-INSERT INTO households (household_id)
-VALUES ($1)
-RETURNING household_id
+INSERT INTO households (household_id, num_people)
+VALUES ($1, $2)
+RETURNING household_id, num_people
 `
 
-func (q *Queries) InsertHousehold(ctx context.Context, householdID int32) (int32, error) {
-	row := q.db.QueryRow(ctx, insertHousehold, householdID)
-	var household_id int32
-	err := row.Scan(&household_id)
-	return household_id, err
+type InsertHouseholdParams struct {
+	HouseholdID int32 `json:"household_id"`
+	NumPeople   int32 `json:"num_people"`
+}
+
+func (q *Queries) InsertHousehold(ctx context.Context, arg InsertHouseholdParams) (Household, error) {
+	row := q.db.QueryRow(ctx, insertHousehold, arg.HouseholdID, arg.NumPeople)
+	var i Household
+	err := row.Scan(&i.HouseholdID, &i.NumPeople)
+	return i, err
+}
+
+const updateHouseholdNumPeople = `-- name: UpdateHouseholdNumPeople :one
+UPDATE households
+SET num_people = $2
+WHERE household_id = $1
+RETURNING household_id, num_people
+`
+
+type UpdateHouseholdNumPeopleParams struct {
+	HouseholdID int32 `json:"household_id"`
+	NumPeople   int32 `json:"num_people"`
+}
+
+func (q *Queries) UpdateHouseholdNumPeople(ctx context.Context, arg UpdateHouseholdNumPeopleParams) (Household, error) {
+	row := q.db.QueryRow(ctx, updateHouseholdNumPeople, arg.HouseholdID, arg.NumPeople)
+	var i Household
+	err := row.Scan(&i.HouseholdID, &i.NumPeople)
+	return i, err
 }

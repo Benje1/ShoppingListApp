@@ -10,37 +10,40 @@ import (
 )
 
 const createShoppingItem = `-- name: CreateShoppingItem :one
-INSERT INTO shopping_items (name, item_type)
-VALUES ($1, $2)
-RETURNING id, name, item_type, text_id
+INSERT INTO shopping_items (name, item_type, portions_per_unit)
+VALUES ($1, $2, $3)
+RETURNING id, name, item_type, text_id, portions_per_unit
 `
 
 type CreateShoppingItemParams struct {
-	Name     string           `json:"name"`
-	ItemType ShoppingItemType `json:"item_type"`
+	Name            string           `json:"name"`
+	ItemType        ShoppingItemType `json:"item_type"`
+	PortionsPerUnit int32            `json:"portions_per_unit"`
 }
 
 func (q *Queries) CreateShoppingItem(ctx context.Context, arg CreateShoppingItemParams) (ShoppingItem, error) {
-	row := q.db.QueryRow(ctx, createShoppingItem, arg.Name, arg.ItemType)
+	row := q.db.QueryRow(ctx, createShoppingItem, arg.Name, arg.ItemType, arg.PortionsPerUnit)
 	var i ShoppingItem
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.ItemType,
 		&i.TextID,
+		&i.PortionsPerUnit,
 	)
 	return i, err
 }
 
 const getAllShoppingItems = `-- name: GetAllShoppingItems :many
-SELECT id, name, item_type
+SELECT id, name, item_type, portions_per_unit
 FROM shopping_items
 `
 
 type GetAllShoppingItemsRow struct {
-	ID       int32            `json:"id"`
-	Name     string           `json:"name"`
-	ItemType ShoppingItemType `json:"item_type"`
+	ID              int32            `json:"id"`
+	Name            string           `json:"name"`
+	ItemType        ShoppingItemType `json:"item_type"`
+	PortionsPerUnit int32            `json:"portions_per_unit"`
 }
 
 func (q *Queries) GetAllShoppingItems(ctx context.Context) ([]GetAllShoppingItemsRow, error) {
@@ -52,7 +55,12 @@ func (q *Queries) GetAllShoppingItems(ctx context.Context) ([]GetAllShoppingItem
 	var items []GetAllShoppingItemsRow
 	for rows.Next() {
 		var i GetAllShoppingItemsRow
-		if err := rows.Scan(&i.ID, &i.Name, &i.ItemType); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ItemType,
+			&i.PortionsPerUnit,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -64,14 +72,15 @@ func (q *Queries) GetAllShoppingItems(ctx context.Context) ([]GetAllShoppingItem
 }
 
 const listShoppingItems = `-- name: ListShoppingItems :many
-SELECT id, name, item_type
+SELECT id, name, item_type, portions_per_unit
 FROM shopping_items
 `
 
 type ListShoppingItemsRow struct {
-	ID       int32            `json:"id"`
-	Name     string           `json:"name"`
-	ItemType ShoppingItemType `json:"item_type"`
+	ID              int32            `json:"id"`
+	Name            string           `json:"name"`
+	ItemType        ShoppingItemType `json:"item_type"`
+	PortionsPerUnit int32            `json:"portions_per_unit"`
 }
 
 func (q *Queries) ListShoppingItems(ctx context.Context) ([]ListShoppingItemsRow, error) {
@@ -83,7 +92,12 @@ func (q *Queries) ListShoppingItems(ctx context.Context) ([]ListShoppingItemsRow
 	var items []ListShoppingItemsRow
 	for rows.Next() {
 		var i ListShoppingItemsRow
-		if err := rows.Scan(&i.ID, &i.Name, &i.ItemType); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ItemType,
+			&i.PortionsPerUnit,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -92,4 +106,29 @@ func (q *Queries) ListShoppingItems(ctx context.Context) ([]ListShoppingItemsRow
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateShoppingItemPortions = `-- name: UpdateShoppingItemPortions :one
+UPDATE shopping_items
+SET portions_per_unit = $2
+WHERE id = $1
+RETURNING id, name, item_type, text_id, portions_per_unit
+`
+
+type UpdateShoppingItemPortionsParams struct {
+	ID              int32 `json:"id"`
+	PortionsPerUnit int32 `json:"portions_per_unit"`
+}
+
+func (q *Queries) UpdateShoppingItemPortions(ctx context.Context, arg UpdateShoppingItemPortionsParams) (ShoppingItem, error) {
+	row := q.db.QueryRow(ctx, updateShoppingItemPortions, arg.ID, arg.PortionsPerUnit)
+	var i ShoppingItem
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ItemType,
+		&i.TextID,
+		&i.PortionsPerUnit,
+	)
+	return i, err
 }

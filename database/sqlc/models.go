@@ -71,6 +71,7 @@ func (ns NullShoppingItemType) Value() (driver.Value, error) {
 
 type Household struct {
 	HouseholdID int32 `json:"household_id"`
+	NumPeople   int32 `json:"num_people"`
 }
 
 type HouseholdMember struct {
@@ -78,11 +79,26 @@ type HouseholdMember struct {
 	UserID      int32 `json:"user_id"`
 }
 
+type Meal struct {
+	ID              int32       `json:"id"`
+	Name            string      `json:"name"`
+	Description     pgtype.Text `json:"description"`
+	DefaultPortions int32       `json:"default_portions"`
+}
+
+type MealIngredient struct {
+	MealID         int32          `json:"meal_id"`
+	ShoppingItemID int32          `json:"shopping_item_id"`
+	Quantity       pgtype.Numeric `json:"quantity"`
+	Unit           pgtype.Text    `json:"unit"`
+}
+
 type ShoppingItem struct {
-	ID       int32            `json:"id"`
-	Name     string           `json:"name"`
-	ItemType ShoppingItemType `json:"item_type"`
-	TextID   pgtype.Text      `json:"text_id"`
+	ID              int32            `json:"id"`
+	Name            string           `json:"name"`
+	ItemType        ShoppingItemType `json:"item_type"`
+	TextID          pgtype.Text      `json:"text_id"`
+	PortionsPerUnit int32            `json:"portions_per_unit"`
 }
 
 type ShoppingList struct {

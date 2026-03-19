@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net/http"
 
@@ -14,16 +15,28 @@ import (
 )
 
 func main() {
+	forceMigration := flag.Int("force-migration", -1, "Force a specific migration version (clears dirty state). Example: -force-migration=1")
+	flag.Parse()
+
 	loadEnv()
 
 	ctx := context.Background()
 
-	// Run database migrations before opening the connection pool.
-	// Already-applied migrations are skipped automatically.
+	// Recovery mode: clear a dirty migration version and exit.
+	// Usage: go run ./cmd/api -force-migration=1
+	if *forceMigration >= 0 {
+		if err := database.ForceVersion(*forceMigration); err != nil {
+			panic(fmt.Sprintf("force migration failed: %v", err))
+		}
+		fmt.Println("Dirty state cleared. You can now run the server normally.")
+		return
+	}
+
+	// Normal startup: apply any pending migrations.
 	if err := database.RunMigrations(ctx); err != nil {
 		panic(fmt.Sprintf("migrations failed: %v", err))
 	}
-	fmt.Println("Migrations applied successfully")
+	fmt.Println("Migrations up to date")
 
 	pool, err := database.Conn(ctx)
 	if err != nil {

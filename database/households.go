@@ -12,22 +12,22 @@ type PostgresHouseholdRepo struct {
 	DB *pgxpool.Pool
 }
 
-func (p *PostgresHouseholdRepo) InsertHousehold(ctx context.Context, householdID int32) (*sqlc.Household, error) {
+func (p *PostgresHouseholdRepo) InsertHousehold(ctx context.Context, householdID, numPeople int32) (*sqlc.Household, error) {
 	q := sqlc.New(p.DB)
-	id, err := q.InsertHousehold(ctx, householdID)
+	household, err := q.InsertHousehold(ctx, sqlc.InsertHouseholdParams{HouseholdID: householdID, NumPeople: numPeople})
 	if err != nil {
 		return nil, err
 	}
-	return &sqlc.Household{HouseholdID: id}, nil
+	return &sqlc.Household{HouseholdID: household.HouseholdID, NumPeople: household.NumPeople}, nil
 }
 
 func (p *PostgresHouseholdRepo) GetHousehold(ctx context.Context, householdID int32) (*sqlc.Household, error) {
 	q := sqlc.New(p.DB)
-	id, err := q.GetHousehold(ctx, householdID)
+	household, err := q.GetHousehold(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
-	return &sqlc.Household{HouseholdID: id}, nil
+	return &sqlc.Household{HouseholdID: household.HouseholdID, NumPeople: household.NumPeople}, nil
 }
 
 func (p *PostgresHouseholdRepo) DeleteHousehold(ctx context.Context, householdID int32) error {
