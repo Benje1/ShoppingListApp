@@ -45,4 +45,6 @@ func (f *FakeUserRepo) UpdateUserPassword(_ context.Context, _, passwordHash str
 	return f.User, nil
 }
 
-func (f *FakeUserRepo) UpdateUserHouseholdMemberships(_ context.Context, _, _ int32) error { return nil }
+func (f *FakeUserRepo) UpdateUserHouseholdMemberships(_ context.Context, _, _ int32) error {
+	return nil
+}
