@@ -1,6 +1,7 @@
 package households
 
 import (
+	"context"
 	"testing"
 
 	sqlc "weekly-shopping-app/database/sqlc"
@@ -99,8 +100,7 @@ func TestRespondToInvite_InvalidAction(t *testing.T) {
 		InviteID: 1,
 		Action:   "maybe",
 	}
-	// Pass nil db — the function should error before touching it
-	_, err := respondToInvite(nil, nil, input)
+	_, err := respondToInvite(context.TODO(), nil, input)
 	if err == nil {
 		t.Fatal("expected error for invalid action")
 	}
@@ -111,7 +111,7 @@ func TestRespondToInvite_InvalidAction(t *testing.T) {
 
 func TestRespondToInvite_EmptyAction(t *testing.T) {
 	input := RespondToInviteInput{InviteID: 1, Action: ""}
-	_, err := respondToInvite(nil, nil, input)
+	_, err := respondToInvite(context.TODO(), nil, input)
 	if err == nil {
 		t.Fatal("expected error for empty action")
 	}
@@ -121,7 +121,7 @@ func TestRespondToInvite_EmptyAction(t *testing.T) {
 
 func TestRenameHousehold_EmptyName(t *testing.T) {
 	input := RenameHouseholdInput{Name: ""}
-	_, err := renameHousehold(nil, nil, 1, input)
+	_, err := renameHousehold(context.TODO(), nil, 1, input)
 	if err == nil {
 		t.Fatal("expected error for empty household name")
 	}
