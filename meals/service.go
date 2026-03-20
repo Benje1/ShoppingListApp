@@ -23,7 +23,7 @@ func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 		},
 	})
 
-	// GET /meals/get?id= — get a single meal with its ingredients
+	// GET /meals/get?id= — get a single meal with ingredients, cooks, and components
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "/get", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
@@ -32,7 +32,7 @@ func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 				if err != nil {
 					return nil, err
 				}
-				return getMeal(r.Context(), db, id)
+				return getMealFull(r.Context(), db, id)
 			}
 		},
 	})
@@ -107,6 +107,34 @@ func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 	})
 
 	registerPlanAndCookRoutes(r, db)
+
+	// POST /meals/component/add?id=<parent_meal_id>
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[AddComponentInput]{
+		Path: "/component/add", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, AddComponentInput) (any, error) {
+			return func(r *http.Request, input AddComponentInput) (any, error) {
+				id, err := queryID(r)
+				if err != nil {
+					return nil, err
+				}
+				return addComponent(r.Context(), db, id, input)
+			}
+		},
+	})
+
+	// POST /meals/component/remove?id=<parent_meal_id>
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[RemoveComponentInput]{
+		Path: "/component/remove", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, RemoveComponentInput) (any, error) {
+			return func(r *http.Request, input RemoveComponentInput) (any, error) {
+				id, err := queryID(r)
+				if err != nil {
+					return nil, err
+				}
+				return removeComponent(r.Context(), db, id, input)
+			}
+		},
+	})
 }
 
 func queryID(r *http.Request) (int32, error) {

@@ -74,3 +74,31 @@ CREATE TABLE meal_cooks (
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (meal_id, user_id)
 );
+
+-- Added in migration 007
+-- ALTER TABLE shopping_items ADD COLUMN shelf_life_days INT;
+
+CREATE TABLE meal_components (
+    parent_meal_id INT NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
+    sub_meal_id    INT NOT NULL REFERENCES meals(id) ON DELETE RESTRICT,
+    sort_order     INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (parent_meal_id, sub_meal_id),
+    CHECK (parent_meal_id <> sub_meal_id)
+);
+
+CREATE TABLE pantry (
+    id                 SERIAL PRIMARY KEY,
+    shopping_item_id   INT NOT NULL REFERENCES shopping_items(id) ON DELETE CASCADE,
+    household_id       INT REFERENCES households(household_id) ON DELETE CASCADE,
+    user_id            INT REFERENCES users(id) ON DELETE CASCADE,
+    portions_remaining NUMERIC(10,2) NOT NULL DEFAULT 0,
+    expires_on         DATE,
+    status             TEXT NOT NULL DEFAULT 'fresh'
+                           CHECK (status IN ('fresh', 'expiring_soon', 'expired')),
+    bought_at          TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMP NOT NULL DEFAULT now(),
+    CHECK (
+        (household_id IS NOT NULL AND user_id IS NULL) OR
+        (household_id IS NULL     AND user_id IS NOT NULL)
+    )
+);

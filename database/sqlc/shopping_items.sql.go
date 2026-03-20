@@ -132,3 +132,12 @@ func (q *Queries) UpdateShoppingItemPortions(ctx context.Context, arg UpdateShop
 	)
 	return i, err
 }
+
+const getShoppingItemByID = `SELECT id, name, item_type, text_id, portions_per_unit, shelf_life_days FROM shopping_items WHERE id = $1`
+
+func (q *Queries) GetShoppingItemByID(ctx context.Context, id int32) (ShoppingItem, error) {
+	row := q.db.QueryRow(ctx, getShoppingItemByID, id)
+	var i ShoppingItem
+	err := row.Scan(&i.ID, &i.Name, &i.ItemType, &i.TextID, &i.PortionsPerUnit, &i.ShelfLifeDays)
+	return i, err
+}

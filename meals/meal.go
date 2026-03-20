@@ -21,6 +21,11 @@ type IngredientResponse struct {
 	PortionsPerUnit int32   `json:"portions_per_unit"`
 }
 
+type ParentRef struct {
+	MealID int32  `json:"meal_id"`
+	Name   string `json:"name"`
+}
+
 type MealResponse struct {
 	ID              int32                `json:"id"`
 	Name            string               `json:"name"`
@@ -28,6 +33,8 @@ type MealResponse struct {
 	DefaultPortions int32                `json:"default_portions"`
 	Ingredients     []IngredientResponse `json:"ingredients"`
 	Cooks           []CookResponse       `json:"cooks"`
+	Components      []ComponentResponse  `json:"components"`   // sub-meals
+	PartOf          []ParentRef          `json:"part_of"`      // composite meals that include this
 }
 
 type MealSummary struct {
@@ -119,6 +126,8 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 		DefaultPortions: meal.DefaultPortions,
 		Ingredients:     ingredients,
 		Cooks:           []CookResponse{},
+		Components:      []ComponentResponse{},
+		PartOf:          []ParentRef{},
 	}
 }
 
@@ -409,4 +418,99 @@ func planScope(userID, householdID int32, scope string) (pgtype.Int4, pgtype.Int
 		return pgtype.Int4{Int32: householdID, Valid: true}, pgtype.Int4{Valid: false}
 	}
 	return pgtype.Int4{Valid: false}, pgtype.Int4{Int32: userID, Valid: true}
+}
+
+// ── Meal components ───────────────────────────────────────────────────────────
+
+type ComponentResponse struct {
+	SortOrder       int32  `json:"sort_order"`
+	MealID          int32  `json:"meal_id"`
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	DefaultPortions int32  `json:"default_portions"`
+}
+
+type AddComponentInput struct {
+	SubMealID int32 `json:"sub_meal_id"`
+	SortOrder int32 `json:"sort_order"`
+}
+
+type RemoveComponentInput struct {
+	SubMealID int32 `json:"sub_meal_id"`
+}
+
+func getComponents(ctx context.Context, db *pgxpool.Pool, parentID int32) ([]ComponentResponse, error) {
+	q := sqlc.New(db)
+	rows, err := q.GetMealComponents(ctx, parentID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ComponentResponse, len(rows))
+	for i, r := range rows {
+		desc := ""
+		if r.Description.Valid {
+			desc = r.Description.String
+		}
+		out[i] = ComponentResponse{
+			SortOrder:       r.SortOrder,
+			MealID:          r.ID,
+			Name:            r.Name,
+			Description:     desc,
+			DefaultPortions: r.DefaultPortions,
+		}
+	}
+	return out, nil
+}
+
+func addComponent(ctx context.Context, db *pgxpool.Pool, parentID int32, input AddComponentInput) ([]ComponentResponse, error) {
+	if parentID == input.SubMealID {
+		return nil, fmt.Errorf("a meal cannot be a component of itself")
+	}
+	// Guard against cycles: check that the sub-meal doesn't already have parentID as a sub-meal
+	q := sqlc.New(db)
+	existing, err := q.GetMealComponents(ctx, input.SubMealID)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range existing {
+		if c.ID == parentID {
+			return nil, fmt.Errorf("adding this component would create a cycle")
+		}
+	}
+	if err := q.AddMealComponent(ctx, parentID, input.SubMealID, input.SortOrder); err != nil {
+		return nil, err
+	}
+	return getComponents(ctx, db, parentID)
+}
+
+func removeComponent(ctx context.Context, db *pgxpool.Pool, parentID int32, input RemoveComponentInput) ([]ComponentResponse, error) {
+	q := sqlc.New(db)
+	if err := q.RemoveMealComponent(ctx, parentID, input.SubMealID); err != nil {
+		return nil, err
+	}
+	return getComponents(ctx, db, parentID)
+}
+
+// getMeal now includes components and which composite meals use this meal
+func getMealFull(ctx context.Context, db *pgxpool.Pool, id int32) (*MealResponse, error) {
+	meal, err := getMeal(ctx, db, id)
+	if err != nil {
+		return nil, err
+	}
+	// Components (sub-meals)
+	comps, err := getComponents(ctx, db, id)
+	if err != nil {
+		return nil, err
+	}
+	meal.Components = comps
+	// Parent meals that use this meal as a component
+	parents, err := sqlc.New(db).GetParentMeals(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	meal.PartOf = make([]ParentRef, len(parents))
+	for i, p := range parents {
+		meal.PartOf[i] = ParentRef{MealID: p.ParentMealID, Name: p.ParentName}
+	}
+	return meal, nil
 }

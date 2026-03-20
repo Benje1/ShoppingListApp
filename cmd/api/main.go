@@ -10,6 +10,7 @@ import (
 	"weekly-shopping-app/database"
 	"weekly-shopping-app/internal/api"
 	"weekly-shopping-app/internal/api/middleware"
+	"weekly-shopping-app/pantry"
 
 	"github.com/joho/godotenv"
 )
@@ -23,7 +24,6 @@ func main() {
 	ctx := context.Background()
 
 	// Recovery mode: clear a dirty migration version and exit.
-	// Usage: go run ./cmd/api -force-migration=1
 	if *forceMigration >= 0 {
 		if err := database.ForceVersion(*forceMigration); err != nil {
 			panic(fmt.Sprintf("force migration failed: %v", err))
@@ -48,7 +48,9 @@ func main() {
 
 	handler := middleware.MiddlewareWrapper(mux)
 
+	// Background jobs
 	authentication.StartSessionCleanup()
+	pantry.StartExpiryScheduler(pool) // marks perishables as expiring_soon / expired every hour
 
 	fmt.Println("Server listening on :8080")
 	fmt.Println(http.ListenAndServe(":8080", handler))

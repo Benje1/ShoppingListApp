@@ -107,6 +107,7 @@ type ShoppingItem struct {
 	ItemType        ShoppingItemType `json:"item_type"`
 	TextID          pgtype.Text      `json:"text_id"`
 	PortionsPerUnit int32            `json:"portions_per_unit"`
+	ShelfLifeDays   pgtype.Int4      `json:"shelf_life_days"`
 }
 
 type ShoppingList struct {
