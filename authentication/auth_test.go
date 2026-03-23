@@ -62,7 +62,7 @@ func TestCheckPassword_EmptyPassword(t *testing.T) {
 
 func TestCreateSession_SetsCookie(t *testing.T) {
 	w := httptest.NewRecorder()
-	authentication.CreateSession(w, "alice", 42)
+	authentication.CreateSession(w, "alice", 42, nil)
 	cookies := w.Result().Cookies()
 	if len(cookies) == 0 {
 		t.Fatal("expected a session cookie to be set")
@@ -74,7 +74,7 @@ func TestCreateSession_SetsCookie(t *testing.T) {
 
 func TestGetUser_ValidSession(t *testing.T) {
 	w := httptest.NewRecorder()
-	authentication.CreateSession(w, "alice", 42)
+	authentication.CreateSession(w, "alice", 42, nil)
 	cookie := w.Result().Cookies()[0]
 
 	r := httptest.NewRequest("GET", "/", nil)
@@ -108,7 +108,7 @@ func TestGetUser_InvalidCookieValue(t *testing.T) {
 
 func TestGetUserID_ValidSession(t *testing.T) {
 	w := httptest.NewRecorder()
-	authentication.CreateSession(w, "bob", 99)
+	authentication.CreateSession(w, "bob", 99, nil)
 	cookie := w.Result().Cookies()[0]
 
 	r := httptest.NewRequest("GET", "/", nil)
@@ -133,7 +133,7 @@ func TestGetUserID_NoSession(t *testing.T) {
 
 func TestDestroySession_RemovesSession(t *testing.T) {
 	w := httptest.NewRecorder()
-	authentication.CreateSession(w, "carol", 7)
+	authentication.CreateSession(w, "carol", 7, nil)
 	cookie := w.Result().Cookies()[0]
 
 	r := httptest.NewRequest("GET", "/", nil)
@@ -153,8 +153,8 @@ func TestDestroySession_RemovesSession(t *testing.T) {
 
 func TestCreateSession_MultipleUsers_Independent(t *testing.T) {
 	w1, w2 := httptest.NewRecorder(), httptest.NewRecorder()
-	authentication.CreateSession(w1, "user1", 1)
-	authentication.CreateSession(w2, "user2", 2)
+	authentication.CreateSession(w1, "user1", 1, nil)
+	authentication.CreateSession(w2, "user2", 2, nil)
 
 	r1 := httptest.NewRequest("GET", "/", nil)
 	r1.AddCookie(w1.Result().Cookies()[0])

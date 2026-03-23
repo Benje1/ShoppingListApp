@@ -16,9 +16,10 @@ var (
 )
 
 type Session struct {
-	Username  string
-	UserID    int32
-	ExpiresAt time.Time
+	Username     string
+	UserID       int32
+	HouseholdIds []int32
+	ExpiresAt    time.Time
 }
 
 func newSessionID() string {
@@ -27,13 +28,14 @@ func newSessionID() string {
 	return hex.EncodeToString(b)
 }
 
-func CreateSession(w http.ResponseWriter, username string, userID int32) {
+func CreateSession(w http.ResponseWriter, username string, userID int32, households []int32) {
 	sessionID := newSessionID()
 
 	session := Session{
-		Username:  username,
-		UserID:    userID,
-		ExpiresAt: time.Now().Add(30 * time.Minute),
+		Username:     username,
+		UserID:       userID,
+		HouseholdIds: households,
+		ExpiresAt:    time.Now().Add(30 * time.Minute),
 	}
 
 	sessionMux.Lock()

@@ -69,7 +69,8 @@ func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, L
 		if err != nil {
 			return nil, err
 		}
-		CreateSession(w, user.Username, user.ID)
+		households := getHouseholdsIds(user.Households)
+		CreateSession(w, user.Username, user.ID, households)
 		return LoginResponse{
 			ID:         user.ID,
 			Name:       user.Name,
@@ -81,4 +82,12 @@ func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, L
 
 func login(ctx context.Context, user LoginRequest, repo database.UserRepository) (*SafeUser, error) {
 	return LoginService(ctx, repo, user.Username, user.Password)
+}
+
+func getHouseholdsIds(households []sqlc.UserHousehold) []int32 {
+	var ids []int32
+	for _, household := range households {
+		ids = append(ids, household.HouseholdID)
+	}
+	return ids
 }

@@ -13,7 +13,7 @@ func TestSessionTokenExpiration(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := httptest.NewRecorder()
 		// CreateSession now requires a userID — pass 1 as a dummy value for tests
-		authentication.CreateSession(w, "test", 1)
+		authentication.CreateSession(w, "test", 1, nil)
 		res := w.Result()
 		cookies := res.Cookies()
 
