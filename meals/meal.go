@@ -3,6 +3,7 @@ package meals
 import (
 	"context"
 	"fmt"
+	"math"
 
 	sqlc "weekly-shopping-app/database/sqlc"
 
@@ -403,8 +404,73 @@ func setMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, input S
 			}
 			day.DefaultPortions = meal.DefaultPortions
 		}
+		// Add all meal ingredients (including sub-meals) to the shopping list
+		if addErr := addMealIngredientsToShoppingList(ctx, db, id, hid, uid); addErr != nil {
+			// Non-fatal — plan was saved, log and continue
+			fmt.Printf("[meal plan] warning: could not add ingredients to shopping list: %v\n", addErr)
+		}
 	}
 	return day, nil
+}
+
+// addMealIngredientsToShoppingList collects all ingredients from a meal and its
+// sub-meal components (recursively) and upserts them onto the shopping list.
+// Quantities are rounded up to the nearest integer (ceiling) since the shopping
+// list stores int quantities.
+func addMealIngredientsToShoppingList(ctx context.Context, db *pgxpool.Pool, mealID int32, hid, uid pgtype.Int4) error {
+	q := sqlc.New(db)
+
+	// Accumulate total quantity per item across this meal and all sub-meals
+	totals := make(map[int32]float64)
+
+	var collect func(id int32) error
+	collect = func(id int32) error {
+		ings, err := q.GetMealWithIngredients(ctx, id)
+		if err != nil {
+			return err
+		}
+		for _, ing := range ings {
+			qty := numericToFloat(ing.Quantity)
+			if qty <= 0 {
+				qty = 1
+			}
+			totals[ing.ShoppingItemID] += qty
+		}
+		// Recurse into sub-meals
+		components, err := q.GetMealComponents(ctx, id)
+		if err != nil {
+			return err
+		}
+		for _, c := range components {
+			if err := collect(c.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if err := collect(mealID); err != nil {
+		return err
+	}
+
+	// Upsert each ingredient onto the shopping list
+	for itemID, qty := range totals {
+		// Round up — we never want to add 0 of something
+		rounded := int32(math.Ceil(qty))
+		if rounded < 1 {
+			rounded = 1
+		}
+		_, err := q.AddToShoppingList(ctx, sqlc.AddToShoppingListParams{
+			ShoppingItemID: itemID,
+			Quantity:       rounded,
+			HouseholdID:    hid,
+			UserID:         uid,
+		})
+		if err != nil {
+			return fmt.Errorf("adding item %d to shopping list: %w", itemID, err)
+		}
+	}
+	return nil
 }
 
 func clearMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, input ClearMealPlanInput) error {

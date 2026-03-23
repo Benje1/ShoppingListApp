@@ -358,15 +358,18 @@ func (q *Queries) GetMealCooks(ctx context.Context, mealID int32) ([]MealCookRow
 // ── Meal plan (full) ──────────────────────────────────────────────────────────
 
 const getMealPlanFull = `
-SELECT
-    mp.id, mp.day_name, mp.meal_id, mp.cook_user_id, mp.updated_at,
-    m.name AS meal_name, m.default_portions, m.description AS meal_description,
-    cu.name AS cook_name, cu.username AS cook_username
-FROM meal_plan mp
-LEFT JOIN meals m ON m.id = mp.meal_id
-LEFT JOIN users cu ON cu.id = mp.cook_user_id
-WHERE mp.household_id = $1 OR mp.user_id = $2
-ORDER BY CASE mp.day_name
+SELECT * FROM (
+    SELECT DISTINCT ON (mp.day_name, mp.household_id, mp.user_id)
+        mp.id, mp.day_name, mp.meal_id, mp.cook_user_id, mp.updated_at,
+        m.name AS meal_name, m.default_portions, m.description AS meal_description,
+        cu.name AS cook_name, cu.username AS cook_username
+    FROM meal_plan mp
+    LEFT JOIN meals m ON m.id = mp.meal_id
+    LEFT JOIN users cu ON cu.id = mp.cook_user_id
+    WHERE mp.household_id = $1 OR mp.user_id = $2
+    ORDER BY mp.day_name, mp.household_id, mp.user_id, mp.id DESC
+) sub
+ORDER BY CASE day_name
     WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
     WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6
     WHEN 'Sunday' THEN 7 ELSE 8 END`
@@ -405,10 +408,20 @@ func (q *Queries) GetMealPlanFull(ctx context.Context, householdID, userID pgtyp
 	return items, rows.Err()
 }
 
-const setMealPlanDay = `
+// Two conflict-target queries — one per scope — because partial unique indexes
+// require the exact predicate to be named in ON CONFLICT.
+
+const setMealPlanDayHousehold = `
 INSERT INTO meal_plan (day_name, meal_id, cook_user_id, household_id, user_id, updated_at)
 VALUES ($1, $2, $3, $4, $5, now())
-ON CONFLICT (day_name, household_id, user_id)
+ON CONFLICT (day_name, household_id) WHERE household_id IS NOT NULL
+DO UPDATE SET meal_id = EXCLUDED.meal_id, cook_user_id = EXCLUDED.cook_user_id, updated_at = now()
+RETURNING id, day_name, meal_id, cook_user_id, household_id, user_id, updated_at, meal_name`
+
+const setMealPlanDayUser = `
+INSERT INTO meal_plan (day_name, meal_id, cook_user_id, household_id, user_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
+ON CONFLICT (day_name, user_id) WHERE user_id IS NOT NULL
 DO UPDATE SET meal_id = EXCLUDED.meal_id, cook_user_id = EXCLUDED.cook_user_id, updated_at = now()
 RETURNING id, day_name, meal_id, cook_user_id, household_id, user_id, updated_at, meal_name`
 
@@ -432,7 +445,12 @@ type MealPlanDayResult struct {
 }
 
 func (q *Queries) SetMealPlanDay(ctx context.Context, arg SetMealPlanDayParams) (MealPlanDayResult, error) {
-	row := q.db.QueryRow(ctx, setMealPlanDay,
+	// Choose the conflict target based on which scope is set
+	query := setMealPlanDayUser
+	if arg.HouseholdID.Valid {
+		query = setMealPlanDayHousehold
+	}
+	row := q.db.QueryRow(ctx, query,
 		arg.DayName, arg.MealID, arg.CookUserID, arg.HouseholdID, arg.UserID)
 	var i MealPlanDayResult
 	err := row.Scan(&i.ID, &i.DayName, &i.MealID, &i.CookUserID, &i.HouseholdID, &i.UserID, &i.UpdatedAt, &i.MealName)
@@ -440,7 +458,13 @@ func (q *Queries) SetMealPlanDay(ctx context.Context, arg SetMealPlanDayParams) 
 }
 
 const clearMealPlanDay = `
-DELETE FROM meal_plan WHERE day_name = $1 AND (household_id = $2 OR user_id = $3)`
+DELETE FROM meal_plan
+WHERE day_name = $1
+  AND (
+    (household_id = $2 AND $2 IS NOT NULL)
+    OR
+    (user_id = $3 AND $3 IS NOT NULL)
+  )`
 
 func (q *Queries) ClearMealPlanDay(ctx context.Context, dayName string, householdID, userID pgtype.Int4) error {
 	_, err := q.db.Exec(ctx, clearMealPlanDay, dayName, householdID, userID)
