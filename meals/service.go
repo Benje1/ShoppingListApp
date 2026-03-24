@@ -153,13 +153,11 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 		Path: "/plan", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				userID, err := authentication.GetUserID(r)
-				if err != nil {
-					return nil, err
-				}
-				householdID := int32(0)
-				fmt.Sscanf(r.URL.Query().Get("household_id"), "%d", &householdID)
-				return getMealPlanFull(r.Context(), db, userID, householdID)
+					sess, err := authentication.SessionFromContext(r)
+					if err != nil {
+						return nil, err
+					}
+				return getMealPlanFull(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
 			}
 		},
 	})
@@ -169,11 +167,11 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 		Path: "/plan/set", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, SetMealPlanInput) (any, error) {
 			return func(r *http.Request, input SetMealPlanInput) (any, error) {
-				userID, err := authentication.GetUserID(r)
-				if err != nil {
-					return nil, err
-				}
-				return setMealPlanDay(r.Context(), db, userID, input)
+					sess, err := authentication.SessionFromContext(r)
+					if err != nil {
+						return nil, err
+					}
+				return setMealPlanDay(r.Context(), db, sess.UserID, input)
 			}
 		},
 	})
@@ -183,11 +181,11 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 		Path: "/plan/clear", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, ClearMealPlanInput) (any, error) {
 			return func(r *http.Request, input ClearMealPlanInput) (any, error) {
-				userID, err := authentication.GetUserID(r)
-				if err != nil {
-					return nil, err
-				}
-				if err := clearMealPlanDay(r.Context(), db, userID, input); err != nil {
+					sess, err := authentication.SessionFromContext(r)
+					if err != nil {
+						return nil, err
+					}
+				if err := clearMealPlanDay(r.Context(), db, sess.UserID, input); err != nil {
 					return nil, err
 				}
 				return map[string]string{"status": "cleared"}, nil
@@ -242,12 +240,11 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 		Path: "/for-cook", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				var userID int32
-				fmt.Sscanf(r.URL.Query().Get("user_id"), "%d", &userID)
-				if userID == 0 {
-					return nil, fmt.Errorf("user_id is required")
+				sess, err := authentication.SessionFromContext(r)
+				if err != nil {
+					return nil, err
 				}
-				return getMealsForCook(r.Context(), db, userID)
+				return getMealsForCook(r.Context(), db, sess.UserID)
 			}
 		},
 	})

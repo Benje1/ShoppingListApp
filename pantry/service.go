@@ -18,11 +18,11 @@ func RegisterPantryRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.
 		Path: "", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				userID, householdID, err := userAndHousehold(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				return getPantry(r.Context(), db, userID, householdID)
+				return getPantry(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
 			}
 		},
 	})
@@ -32,11 +32,14 @@ func RegisterPantryRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.
 		Path: "/add", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, AddToPantryInput) (any, error) {
 			return func(r *http.Request, input AddToPantryInput) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				return addToPantry(r.Context(), db, userID, input)
+				if input.Scope == "household" && !sess.HasHousehold(input.HouseholdID) {
+					return nil, fmt.Errorf("not a member of that household")
+				}
+				return addToPantry(r.Context(), db, sess.UserID, input)
 			}
 		},
 	})
@@ -60,14 +63,17 @@ func RegisterPantryRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.
 		Path: "/cook", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, CookMealInput) (any, error) {
 			return func(r *http.Request, input CookMealInput) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
+				}
+				if input.Scope == "household" && !sess.HasHousehold(input.HouseholdID) {
+					return nil, fmt.Errorf("not a member of that household")
 				}
 				if input.Portions <= 0 {
 					input.Portions = 1
 				}
-				if err := cookMeal(r.Context(), db, userID, input); err != nil {
+				if err := cookMeal(r.Context(), db, sess.UserID, input); err != nil {
 					return nil, err
 				}
 				return map[string]string{"status": "portions decremented"}, nil
@@ -88,14 +94,4 @@ func RegisterPantryRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.
 			}
 		},
 	})
-}
-
-func userAndHousehold(r *http.Request) (int32, int32, error) {
-	userID, err := authentication.GetUserID(r)
-	if err != nil {
-		return 0, 0, err
-	}
-	var householdID int32
-	fmt.Sscanf(r.URL.Query().Get("household_id"), "%d", &householdID)
-	return userID, householdID, nil
 }

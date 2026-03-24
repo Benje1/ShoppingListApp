@@ -49,57 +49,53 @@ func RegisterShoppingListRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(
 		},
 	})
 
-	// GET /shopping/list — the user's personal + household shopping list
+	// GET /shopping/list
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "/list", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				householdID := int32(0)
-				if hid := r.URL.Query().Get("household_id"); hid != "" {
-					fmt.Sscanf(hid, "%d", &householdID)
-				}
-				return getShoppingList(r.Context(), db, userID, householdID)
+				return getShoppingList(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
 			}
 		},
 	})
 
-	// GET /shopping/list/updated-at — timestamp of most recent change
+	// GET /shopping/list/updated-at
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "/list/updated-at", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				householdID := int32(0)
-				if hid := r.URL.Query().Get("household_id"); hid != "" {
-					fmt.Sscanf(hid, "%d", &householdID)
-				}
-				return getShoppingListUpdatedAt(r.Context(), db, userID, householdID)
+				return getShoppingListUpdatedAt(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
 			}
 		},
 	})
 
-	// POST /shopping/list/add — add a catalogue item to the shopping list
+	// POST /shopping/list/add
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[AddToListInput]{
 		Path: "/list/add", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, AddToListInput) (any, error) {
 			return func(r *http.Request, input AddToListInput) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				return addToShoppingList(r.Context(), db, userID, input)
+				// Validate household scope: only allow if session owns that household
+				if input.Scope == "household" && !sess.HasHousehold(input.HouseholdID) {
+					return nil, fmt.Errorf("not a member of that household")
+				}
+				return addToShoppingList(r.Context(), db, sess.UserID, input)
 			}
 		},
 	})
 
-	// DELETE /shopping/list/remove?id=<list_entry_id>
+	// DELETE /shopping/list/remove?id=
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "/list/remove", Method: "DELETE", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
@@ -123,29 +119,28 @@ func RegisterShoppingListRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(
 		Path: "/mealplan", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				householdID := int32(0)
-				if hid := r.URL.Query().Get("household_id"); hid != "" {
-					fmt.Sscanf(hid, "%d", &householdID)
-				}
-				return getMealPlan(r.Context(), db, userID, householdID)
+				return getMealPlan(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
 			}
 		},
 	})
 
-	// POST /shopping/mealplan/save — upsert a single day's meal
+	// POST /shopping/mealplan/save
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[UpsertMealPlanInput]{
 		Path: "/mealplan/save", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, UpsertMealPlanInput) (any, error) {
 			return func(r *http.Request, input UpsertMealPlanInput) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				return upsertMealPlanDay(r.Context(), db, userID, input)
+				if input.Scope == "household" && !sess.HasHousehold(input.HouseholdID) {
+					return nil, fmt.Errorf("not a member of that household")
+				}
+				return upsertMealPlanDay(r.Context(), db, sess.UserID, input)
 			}
 		},
 	})
@@ -155,61 +150,59 @@ func RegisterShoppingListRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(
 		Path: "/mealplan/updated-at", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				householdID := int32(0)
-				if hid := r.URL.Query().Get("household_id"); hid != "" {
-					fmt.Sscanf(hid, "%d", &householdID)
-				}
-				return getMealPlanUpdatedAt(r.Context(), db, userID, householdID)
+				return getMealPlanUpdatedAt(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
 			}
 		},
 	})
 
-	// GET /shopping/list/have-it — fetch the full have-it set + updated-at
+	// GET /shopping/list/have-it
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "/list/have-it", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				householdID := int32(0)
-				if hid := r.URL.Query().Get("household_id"); hid != "" {
-					fmt.Sscanf(hid, "%d", &householdID)
-				}
-				return getHaveIt(r.Context(), db, userID, householdID)
+				return getHaveIt(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
 			}
 		},
 	})
 
-	// POST /shopping/list/have-it — mark an item as have-it
+	// POST /shopping/list/have-it/mark
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[HaveItInput]{
 		Path: "/list/have-it/mark", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, HaveItInput) (any, error) {
 			return func(r *http.Request, input HaveItInput) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				return markHaveIt(r.Context(), db, userID, input)
+				if input.Scope == "household" && !sess.HasHousehold(input.HouseholdID) {
+					return nil, fmt.Errorf("not a member of that household")
+				}
+				return markHaveIt(r.Context(), db, sess.UserID, input)
 			}
 		},
 	})
 
-	// POST /shopping/list/have-it/unmark — unmark an item
+	// POST /shopping/list/have-it/unmark
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[HaveItInput]{
 		Path: "/list/have-it/unmark", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, HaveItInput) (any, error) {
 			return func(r *http.Request, input HaveItInput) (any, error) {
-				userID, err := authentication.GetUserID(r)
+				sess, err := authentication.SessionFromContext(r)
 				if err != nil {
 					return nil, err
 				}
-				return unmarkHaveIt(r.Context(), db, userID, input)
+				if input.Scope == "household" && !sess.HasHousehold(input.HouseholdID) {
+					return nil, fmt.Errorf("not a member of that household")
+				}
+				return unmarkHaveIt(r.Context(), db, sess.UserID, input)
 			}
 		},
 	})
@@ -220,14 +213,14 @@ func RegisterShoppingListRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(
 type AddToListInput struct {
 	ItemID      int32  `json:"item_id"`
 	Quantity    int32  `json:"quantity"`
-	Scope       string `json:"scope"` // "personal" or "household"
+	Scope       string `json:"scope"`
 	HouseholdID int32  `json:"household_id"`
 }
 
 type UpsertMealPlanInput struct {
 	DayName     string `json:"day_name"`
 	MealName    string `json:"meal_name"`
-	Scope       string `json:"scope"` // "personal" or "household"
+	Scope       string `json:"scope"`
 	HouseholdID int32  `json:"household_id"`
 }
 
@@ -352,15 +345,13 @@ func seedShoppingList(ctx context.Context, db *pgxpool.Pool) error {
 	return nil
 }
 
-// ── Have-it input ─────────────────────────────────────────────────────────────
+// ── Have-it ───────────────────────────────────────────────────────────────────
 
 type HaveItInput struct {
 	ItemID      int32  `json:"item_id"`
-	Scope       string `json:"scope"`       // "personal" or "household"
+	Scope       string `json:"scope"`
 	HouseholdID int32  `json:"household_id"`
 }
-
-// ── Have-it business logic ────────────────────────────────────────────────────
 
 type HaveItResponse struct {
 	ItemIDs     []int32 `json:"item_ids"`
@@ -377,7 +368,6 @@ func getHaveIt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32)
 	for _, r := range rows {
 		ids = append(ids, r.ShoppingItemID)
 	}
-
 	ts, err := q.GetHaveItUpdatedAt(ctx, listParams(userID, householdID))
 	if err != nil {
 		return HaveItResponse{}, err
