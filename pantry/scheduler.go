@@ -8,15 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// StartExpiryScheduler runs the pantry expiry job every hour.
+// StartExpiryScheduler runs the pantry expiry job every eight hours.
 // It marks items as 'expiring_soon' (within 2 days) or 'expired' (past date).
 // Call this once from main after the DB pool is ready.
 func StartExpiryScheduler(db *pgxpool.Pool) {
 	go func() {
 		// Run once immediately on startup to catch anything that expired while the
-		// server was down, then tick every hour.
+		// server was down, then tick every eight hours.
 		runJob(db)
-		ticker := time.NewTicker(1 * time.Hour)
+		ticker := time.NewTicker(8 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
 			runJob(db)
