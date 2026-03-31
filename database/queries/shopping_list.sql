@@ -12,7 +12,7 @@ SELECT
     CASE WHEN sl.household_id IS NOT NULL THEN 'household' ELSE 'personal' END AS scope
 FROM shopping_list sl
 JOIN shopping_items si ON sl.shopping_item_id = si.id
-WHERE sl.household_id = $1 OR sl.user_id = $2
+WHERE sl.household_id = ANY($1) OR sl.user_id = $2
 ORDER BY si.item_type, si.name;
 
 -- name: GetShoppingListUpdatedAt :one
