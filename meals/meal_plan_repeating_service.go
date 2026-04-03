@@ -138,15 +138,15 @@ func setMealPlanDayV2(ctx context.Context, db *pgxpool.Pool, userID int32, input
 	}
 
 	_, err := q.SetMealPlanDayV2(ctx, sqlc.SetMealPlanDayV2Params{
-		DayName:               input.DayName,
-		MealID:                nullableInt4(effectiveMealID),
-		CookUserID:            nullableInt4(effectiveCookID),
-		RepeatingMealID:       nullableInt4(input.RepeatingMealID),
-		RepeatingCookUserID:   nullableInt4(input.RepeatingCookUserID),
-		TempMealID:            nullableInt4(input.TempMealID),
-		TempCookUserID:        nullableInt4(input.TempCookUserID),
-		HouseholdID:           hid,
-		UserID:                uid,
+		DayName:             input.DayName,
+		MealID:              nullableInt4(effectiveMealID),
+		CookUserID:          nullableInt4(effectiveCookID),
+		RepeatingMealID:     nullableInt4(input.RepeatingMealID),
+		RepeatingCookUserID: nullableInt4(input.RepeatingCookUserID),
+		TempMealID:          nullableInt4(input.TempMealID),
+		TempCookUserID:      nullableInt4(input.TempCookUserID),
+		HouseholdID:         hid,
+		UserID:              uid,
 	})
 	if err != nil {
 		return nil, err
