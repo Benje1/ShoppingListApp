@@ -24,7 +24,7 @@ WHERE household_id = $1 OR user_id = $2;
 -- name: AddToShoppingList :one
 INSERT INTO shopping_list (shopping_item_id, quantity, household_id, user_id, updated_at)
 VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (shopping_item_id, household_id, user_id)
+ON CONFLICT (shopping_item_id, household_id) WHERE household_id IS NOT NULL
 DO UPDATE SET
     quantity   = shopping_list.quantity + EXCLUDED.quantity,
     updated_at = now()
@@ -62,7 +62,7 @@ WHERE household_id = $1 OR user_id = $2;
 -- name: UpsertMealPlanDay :one
 INSERT INTO meal_plan (day_name, meal_name, household_id, user_id, updated_at)
 VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (day_name, household_id, user_id)
+ON CONFLICT (day_name, household_id) WHERE household_id IS NOT NULL
 DO UPDATE SET meal_name = EXCLUDED.meal_name, updated_at = now()
 RETURNING *;
 

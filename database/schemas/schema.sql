@@ -24,20 +24,25 @@ CREATE TABLE household_members (
     PRIMARY KEY (household_id, user_id)
 );
 
+-- shopping_items: portions_per_unit added in migration 002,
+--                shelf_life_days added in migration 007
 CREATE TABLE shopping_items (
     id                SERIAL PRIMARY KEY,
     name              TEXT NOT NULL,
     item_type         shopping_item_type NOT NULL,
     text_id           TEXT UNIQUE,
-    portions_per_unit INT NOT NULL DEFAULT 1
+    portions_per_unit INT NOT NULL DEFAULT 1,
+    shelf_life_days   INT
 );
 
+-- shopping_list: updated_at added in migration 004
 CREATE TABLE shopping_list (
     id               SERIAL PRIMARY KEY,
     shopping_item_id INT REFERENCES shopping_items(id) NOT NULL,
     quantity         INT NOT NULL DEFAULT 1,
     household_id     INT REFERENCES households(household_id),
     user_id          INT REFERENCES users(id),
+    updated_at       TIMESTAMP NOT NULL DEFAULT now(),
     CHECK (
         (household_id IS NOT NULL AND user_id IS NULL) OR
         (household_id IS NULL     AND user_id IS NOT NULL)
@@ -75,9 +80,42 @@ CREATE TABLE meal_cooks (
     PRIMARY KEY (meal_id, user_id)
 );
 
--- Added in migration 007
--- ALTER TABLE shopping_items ADD COLUMN shelf_life_days INT;
+-- meal_plan: added in migration 004,
+--            meal_id/cook_user_id added in migration 006,
+--            repeating_*/temp_* columns added in migration 009
+CREATE TABLE meal_plan (
+    id                     SERIAL PRIMARY KEY,
+    day_name               TEXT NOT NULL,
+    meal_name              TEXT DEFAULT NULL,
+    household_id           INT REFERENCES households(household_id) ON DELETE CASCADE,
+    user_id                INT REFERENCES users(id) ON DELETE CASCADE,
+    updated_at             TIMESTAMP NOT NULL DEFAULT now(),
+    meal_id                INT REFERENCES meals(id) ON DELETE SET NULL,
+    cook_user_id           INT REFERENCES users(id) ON DELETE SET NULL,
+    repeating_cook_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+    temp_cook_user_id      INT REFERENCES users(id) ON DELETE SET NULL,
+    repeating_meal_id      INT REFERENCES meals(id) ON DELETE SET NULL,
+    temp_meal_id           INT REFERENCES meals(id) ON DELETE SET NULL,
+    CHECK (
+        (household_id IS NOT NULL AND user_id IS NULL) OR
+        (household_id IS NULL     AND user_id IS NOT NULL)
+    )
+);
 
+-- shopping_list_have_it: added in migration 005
+CREATE TABLE shopping_list_have_it (
+    id               SERIAL PRIMARY KEY,
+    shopping_item_id INT  NOT NULL REFERENCES shopping_items(id) ON DELETE CASCADE,
+    household_id     INT  REFERENCES households(household_id) ON DELETE CASCADE,
+    user_id          INT  REFERENCES users(id) ON DELETE CASCADE,
+    updated_at       TIMESTAMP NOT NULL DEFAULT now(),
+    CHECK (
+        (household_id IS NOT NULL AND user_id IS NULL) OR
+        (household_id IS NULL     AND user_id IS NOT NULL)
+    )
+);
+
+-- meal_components: added in migration 007
 CREATE TABLE meal_components (
     parent_meal_id INT NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
     sub_meal_id    INT NOT NULL REFERENCES meals(id) ON DELETE RESTRICT,
@@ -86,6 +124,7 @@ CREATE TABLE meal_components (
     CHECK (parent_meal_id <> sub_meal_id)
 );
 
+-- pantry: added in migration 007
 CREATE TABLE pantry (
     id                 SERIAL PRIMARY KEY,
     shopping_item_id   INT NOT NULL REFERENCES shopping_items(id) ON DELETE CASCADE,

@@ -11,9 +11,167 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// ── Get shopping list ─────────────────────────────────────────────────────────
+const addToShoppingList = `-- name: AddToShoppingList :one
+INSERT INTO shopping_list (shopping_item_id, quantity, household_id, user_id, updated_at)
+VALUES ($1, $2, $3, $4, now())
+ON CONFLICT (shopping_item_id, household_id) WHERE household_id IS NOT NULL
+DO UPDATE SET
+    quantity   = shopping_list.quantity + EXCLUDED.quantity,
+    updated_at = now()
+RETURNING id, shopping_item_id, quantity, household_id, user_id, updated_at
+`
 
-const getShoppingList = `
+type AddToShoppingListParams struct {
+	ShoppingItemID int32       `json:"shopping_item_id"`
+	Quantity       int32       `json:"quantity"`
+	HouseholdID    pgtype.Int4 `json:"household_id"`
+	UserID         pgtype.Int4 `json:"user_id"`
+}
+
+func (q *Queries) AddToShoppingList(ctx context.Context, arg AddToShoppingListParams) (ShoppingList, error) {
+	row := q.db.QueryRow(ctx, addToShoppingList,
+		arg.ShoppingItemID,
+		arg.Quantity,
+		arg.HouseholdID,
+		arg.UserID,
+	)
+	var i ShoppingList
+	err := row.Scan(
+		&i.ID,
+		&i.ShoppingItemID,
+		&i.Quantity,
+		&i.HouseholdID,
+		&i.UserID,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getHaveIt = `-- name: GetHaveIt :many
+SELECT shopping_item_id, updated_at
+FROM shopping_list_have_it
+WHERE household_id = $1 OR user_id = $2
+ORDER BY updated_at DESC
+`
+
+type GetHaveItParams struct {
+	HouseholdID pgtype.Int4 `json:"household_id"`
+	UserID      pgtype.Int4 `json:"user_id"`
+}
+
+type GetHaveItRow struct {
+	ShoppingItemID int32            `json:"shopping_item_id"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) GetHaveIt(ctx context.Context, arg GetHaveItParams) ([]GetHaveItRow, error) {
+	rows, err := q.db.Query(ctx, getHaveIt, arg.HouseholdID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetHaveItRow
+	for rows.Next() {
+		var i GetHaveItRow
+		if err := rows.Scan(&i.ShoppingItemID, &i.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getHaveItUpdatedAt = `-- name: GetHaveItUpdatedAt :one
+SELECT MAX(updated_at) AS last_updated
+FROM shopping_list_have_it
+WHERE household_id = $1 OR user_id = $2
+`
+
+type GetHaveItUpdatedAtParams struct {
+	HouseholdID pgtype.Int4 `json:"household_id"`
+	UserID      pgtype.Int4 `json:"user_id"`
+}
+
+func (q *Queries) GetHaveItUpdatedAt(ctx context.Context, arg GetHaveItUpdatedAtParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, getHaveItUpdatedAt, arg.HouseholdID, arg.UserID)
+	var last_updated interface{}
+	err := row.Scan(&last_updated)
+	return last_updated, err
+}
+
+const getMealPlan = `-- name: GetMealPlan :many
+SELECT id, day_name, meal_name, household_id, user_id, updated_at
+FROM meal_plan
+WHERE household_id = $1 OR user_id = $2
+ORDER BY CASE day_name
+    WHEN 'Monday'    THEN 1 WHEN 'Tuesday'   THEN 2 WHEN 'Wednesday' THEN 3
+    WHEN 'Thursday'  THEN 4 WHEN 'Friday'    THEN 5 WHEN 'Saturday'  THEN 6
+    WHEN 'Sunday'    THEN 7 ELSE 8 END
+`
+
+type GetMealPlanParams struct {
+	HouseholdID pgtype.Int4 `json:"household_id"`
+	UserID      pgtype.Int4 `json:"user_id"`
+}
+
+type GetMealPlanRow struct {
+	ID          int32            `json:"id"`
+	DayName     string           `json:"day_name"`
+	MealName    pgtype.Text      `json:"meal_name"`
+	HouseholdID pgtype.Int4      `json:"household_id"`
+	UserID      pgtype.Int4      `json:"user_id"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) GetMealPlan(ctx context.Context, arg GetMealPlanParams) ([]GetMealPlanRow, error) {
+	rows, err := q.db.Query(ctx, getMealPlan, arg.HouseholdID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMealPlanRow
+	for rows.Next() {
+		var i GetMealPlanRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DayName,
+			&i.MealName,
+			&i.HouseholdID,
+			&i.UserID,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMealPlanUpdatedAt = `-- name: GetMealPlanUpdatedAt :one
+SELECT MAX(updated_at) AS last_updated
+FROM meal_plan
+WHERE household_id = $1 OR user_id = $2
+`
+
+type GetMealPlanUpdatedAtParams struct {
+	HouseholdID pgtype.Int4 `json:"household_id"`
+	UserID      pgtype.Int4 `json:"user_id"`
+}
+
+func (q *Queries) GetMealPlanUpdatedAt(ctx context.Context, arg GetMealPlanUpdatedAtParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, getMealPlanUpdatedAt, arg.HouseholdID, arg.UserID)
+	var last_updated interface{}
+	err := row.Scan(&last_updated)
+	return last_updated, err
+}
+
+const getShoppingList = `-- name: GetShoppingList :many
 SELECT
     sl.id,
     si.id   AS item_id,
@@ -25,8 +183,9 @@ SELECT
     CASE WHEN sl.household_id IS NOT NULL THEN 'household' ELSE 'personal' END AS scope
 FROM shopping_list sl
 JOIN shopping_items si ON sl.shopping_item_id = si.id
-WHERE sl.household_id = $1 OR sl.user_id = $2
-ORDER BY si.item_type, si.name`
+WHERE sl.household_id = ANY($1) OR sl.user_id = $2
+ORDER BY si.item_type, si.name
+`
 
 type GetShoppingListParams struct {
 	HouseholdID pgtype.Int4 `json:"household_id"`
@@ -41,9 +200,11 @@ type GetShoppingListRow struct {
 	PortionsPerUnit int32            `json:"portions_per_unit"`
 	Quantity        int32            `json:"quantity"`
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
-	Scope           string           `json:"scope"` // "household" or "personal"
+	Scope           string           `json:"scope"`
 }
 
+// Returns all shopping list items for a user and/or their household,
+// with a scope field so the frontend knows which is which.
 func (q *Queries) GetShoppingList(ctx context.Context, arg GetShoppingListParams) ([]GetShoppingListRow, error) {
 	rows, err := q.db.Query(ctx, getShoppingList, arg.HouseholdID, arg.UserID)
 	if err != nil {
@@ -53,184 +214,52 @@ func (q *Queries) GetShoppingList(ctx context.Context, arg GetShoppingListParams
 	var items []GetShoppingListRow
 	for rows.Next() {
 		var i GetShoppingListRow
-		if err := rows.Scan(&i.ID, &i.ItemID, &i.Name, &i.ItemType, &i.PortionsPerUnit, &i.Quantity, &i.UpdatedAt, &i.Scope); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.ItemID,
+			&i.Name,
+			&i.ItemType,
+			&i.PortionsPerUnit,
+			&i.Quantity,
+			&i.UpdatedAt,
+			&i.Scope,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
 	}
-	return items, rows.Err()
-}
-
-// ── Updated-at ────────────────────────────────────────────────────────────────
-
-const getShoppingListUpdatedAt = `
-SELECT MAX(updated_at) AS last_updated
-FROM shopping_list
-WHERE household_id = $1 OR user_id = $2`
-
-func (q *Queries) GetShoppingListUpdatedAt(ctx context.Context, arg GetShoppingListParams) (pgtype.Timestamp, error) {
-	row := q.db.QueryRow(ctx, getShoppingListUpdatedAt, arg.HouseholdID, arg.UserID)
-	var t pgtype.Timestamp
-	err := row.Scan(&t)
-	return t, err
-}
-
-// ── Add to shopping list ──────────────────────────────────────────────────────
-
-const addToShoppingList = `
-INSERT INTO shopping_list (shopping_item_id, quantity, household_id, user_id, updated_at)
-VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (shopping_item_id, household_id) WHERE household_id IS NOT NULL
-DO UPDATE SET quantity = shopping_list.quantity + EXCLUDED.quantity, updated_at = now()
-RETURNING id, shopping_item_id, quantity, household_id, user_id, updated_at`
-
-type AddToShoppingListParams struct {
-	ShoppingItemID int32       `json:"shopping_item_id"`
-	Quantity       int32       `json:"quantity"`
-	HouseholdID    pgtype.Int4 `json:"household_id"`
-	UserID         pgtype.Int4 `json:"user_id"`
-}
-
-type ShoppingListEntry struct {
-	ID             int32            `json:"id"`
-	ShoppingItemID int32            `json:"shopping_item_id"`
-	Quantity       int32            `json:"quantity"`
-	HouseholdID    pgtype.Int4      `json:"household_id"`
-	UserID         pgtype.Int4      `json:"user_id"`
-	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
-}
-
-func (q *Queries) AddToShoppingList(ctx context.Context, arg AddToShoppingListParams) (ShoppingListEntry, error) {
-	row := q.db.QueryRow(ctx, addToShoppingList, arg.ShoppingItemID, arg.Quantity, arg.HouseholdID, arg.UserID)
-	var i ShoppingListEntry
-	err := row.Scan(&i.ID, &i.ShoppingItemID, &i.Quantity, &i.HouseholdID, &i.UserID, &i.UpdatedAt)
-	return i, err
-}
-
-// ── Remove from shopping list ─────────────────────────────────────────────────
-
-const removeFromShoppingList = `DELETE FROM shopping_list WHERE id = $1`
-
-func (q *Queries) RemoveFromShoppingList(ctx context.Context, id int32) error {
-	_, err := q.db.Exec(ctx, removeFromShoppingList, id)
-	return err
-}
-
-// ── Meal plan ─────────────────────────────────────────────────────────────────
-
-const getMealPlan = `
-SELECT id, day_name, meal_name, household_id, user_id, updated_at
-FROM meal_plan
-WHERE household_id = $1 OR user_id = $2
-ORDER BY CASE day_name
-    WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
-    WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6
-    WHEN 'Sunday' THEN 7 ELSE 8 END`
-
-type MealPlanRow struct {
-	ID          int32            `json:"id"`
-	DayName     string           `json:"day_name"`
-	MealName    string           `json:"meal_name"`
-	HouseholdID pgtype.Int4      `json:"household_id"`
-	UserID      pgtype.Int4      `json:"user_id"`
-	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
-}
-
-func (q *Queries) GetMealPlan(ctx context.Context, arg GetShoppingListParams) ([]MealPlanRow, error) {
-	rows, err := q.db.Query(ctx, getMealPlan, arg.HouseholdID, arg.UserID)
-	if err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var items []MealPlanRow
-	for rows.Next() {
-		var i MealPlanRow
-		if err := rows.Scan(&i.ID, &i.DayName, &i.MealName, &i.HouseholdID, &i.UserID, &i.UpdatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	return items, rows.Err()
+	return items, nil
 }
 
-const getMealPlanUpdatedAt = `SELECT MAX(updated_at) AS last_updated FROM meal_plan WHERE household_id = $1 OR user_id = $2`
+const getShoppingListUpdatedAt = `-- name: GetShoppingListUpdatedAt :one
+SELECT MAX(updated_at) AS last_updated
+FROM shopping_list
+WHERE household_id = $1 OR user_id = $2
+`
 
-func (q *Queries) GetMealPlanUpdatedAt(ctx context.Context, arg GetShoppingListParams) (pgtype.Timestamp, error) {
-	row := q.db.QueryRow(ctx, getMealPlanUpdatedAt, arg.HouseholdID, arg.UserID)
-	var t pgtype.Timestamp
-	err := row.Scan(&t)
-	return t, err
-}
-
-const upsertMealPlanDay = `
-INSERT INTO meal_plan (day_name, meal_name, household_id, user_id, updated_at)
-VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (day_name, household_id, user_id)
-DO UPDATE SET meal_name = EXCLUDED.meal_name, updated_at = now()
-RETURNING id, day_name, meal_name, household_id, user_id, updated_at`
-
-type UpsertMealPlanDayParams struct {
-	DayName     string      `json:"day_name"`
-	MealName    string      `json:"meal_name"`
+type GetShoppingListUpdatedAtParams struct {
 	HouseholdID pgtype.Int4 `json:"household_id"`
 	UserID      pgtype.Int4 `json:"user_id"`
 }
 
-func (q *Queries) UpsertMealPlanDay(ctx context.Context, arg UpsertMealPlanDayParams) (MealPlanRow, error) {
-	row := q.db.QueryRow(ctx, upsertMealPlanDay, arg.DayName, arg.MealName, arg.HouseholdID, arg.UserID)
-	var i MealPlanRow
-	err := row.Scan(&i.ID, &i.DayName, &i.MealName, &i.HouseholdID, &i.UserID, &i.UpdatedAt)
-	return i, err
+// Returns the most recent updated_at across all entries for this user/household.
+func (q *Queries) GetShoppingListUpdatedAt(ctx context.Context, arg GetShoppingListUpdatedAtParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, getShoppingListUpdatedAt, arg.HouseholdID, arg.UserID)
+	var last_updated interface{}
+	err := row.Scan(&last_updated)
+	return last_updated, err
 }
 
-// ── Have-it ───────────────────────────────────────────────────────────────────
-
-const getHaveIt = `
-SELECT shopping_item_id, updated_at
-FROM shopping_list_have_it
-WHERE household_id = $1 OR user_id = $2
-ORDER BY updated_at DESC`
-
-type HaveItRow struct {
-	ShoppingItemID int32            `json:"shopping_item_id"`
-	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
-}
-
-func (q *Queries) GetHaveIt(ctx context.Context, arg GetShoppingListParams) ([]HaveItRow, error) {
-	rows, err := q.db.Query(ctx, getHaveIt, arg.HouseholdID, arg.UserID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []HaveItRow
-	for rows.Next() {
-		var i HaveItRow
-		if err := rows.Scan(&i.ShoppingItemID, &i.UpdatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	return items, rows.Err()
-}
-
-const getHaveItUpdatedAt = `
-SELECT MAX(updated_at) AS last_updated
-FROM shopping_list_have_it
-WHERE household_id = $1 OR user_id = $2`
-
-func (q *Queries) GetHaveItUpdatedAt(ctx context.Context, arg GetShoppingListParams) (pgtype.Timestamp, error) {
-	row := q.db.QueryRow(ctx, getHaveItUpdatedAt, arg.HouseholdID, arg.UserID)
-	var t pgtype.Timestamp
-	err := row.Scan(&t)
-	return t, err
-}
-
-const markHaveIt = `
+const markHaveIt = `-- name: MarkHaveIt :one
 INSERT INTO shopping_list_have_it (shopping_item_id, household_id, user_id, updated_at)
 VALUES ($1, $2, $3, now())
 ON CONFLICT (shopping_item_id, household_id) WHERE household_id IS NOT NULL
 DO UPDATE SET updated_at = now()
-RETURNING id, shopping_item_id, household_id, user_id, updated_at`
+RETURNING id, shopping_item_id, household_id, user_id, updated_at
+`
 
 type MarkHaveItParams struct {
 	ShoppingItemID int32       `json:"shopping_item_id"`
@@ -238,25 +267,34 @@ type MarkHaveItParams struct {
 	UserID         pgtype.Int4 `json:"user_id"`
 }
 
-type HaveItEntry struct {
-	ID             int32            `json:"id"`
-	ShoppingItemID int32            `json:"shopping_item_id"`
-	HouseholdID    pgtype.Int4      `json:"household_id"`
-	UserID         pgtype.Int4      `json:"user_id"`
-	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
-}
-
-func (q *Queries) MarkHaveIt(ctx context.Context, arg MarkHaveItParams) (HaveItEntry, error) {
+func (q *Queries) MarkHaveIt(ctx context.Context, arg MarkHaveItParams) (ShoppingListHaveIt, error) {
 	row := q.db.QueryRow(ctx, markHaveIt, arg.ShoppingItemID, arg.HouseholdID, arg.UserID)
-	var i HaveItEntry
-	err := row.Scan(&i.ID, &i.ShoppingItemID, &i.HouseholdID, &i.UserID, &i.UpdatedAt)
+	var i ShoppingListHaveIt
+	err := row.Scan(
+		&i.ID,
+		&i.ShoppingItemID,
+		&i.HouseholdID,
+		&i.UserID,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
-const unmarkHaveIt = `
+const removeFromShoppingList = `-- name: RemoveFromShoppingList :exec
+DELETE FROM shopping_list
+WHERE id = $1
+`
+
+func (q *Queries) RemoveFromShoppingList(ctx context.Context, id int32) error {
+	_, err := q.db.Exec(ctx, removeFromShoppingList, id)
+	return err
+}
+
+const unmarkHaveIt = `-- name: UnmarkHaveIt :exec
 DELETE FROM shopping_list_have_it
 WHERE shopping_item_id = $1
-  AND (household_id = $2 OR user_id = $3)`
+  AND (household_id = $2 OR user_id = $3)
+`
 
 type UnmarkHaveItParams struct {
 	ShoppingItemID int32       `json:"shopping_item_id"`
@@ -267,4 +305,97 @@ type UnmarkHaveItParams struct {
 func (q *Queries) UnmarkHaveIt(ctx context.Context, arg UnmarkHaveItParams) error {
 	_, err := q.db.Exec(ctx, unmarkHaveIt, arg.ShoppingItemID, arg.HouseholdID, arg.UserID)
 	return err
+}
+
+const upsertMealPlanDay = `-- name: UpsertMealPlanDay :one
+INSERT INTO meal_plan (day_name, meal_name, household_id, user_id, updated_at)
+VALUES ($1, $2, $3, $4, now())
+ON CONFLICT (day_name, household_id) WHERE household_id IS NOT NULL
+DO UPDATE SET meal_name = EXCLUDED.meal_name, updated_at = now()
+RETURNING id, day_name, meal_name, household_id, user_id, updated_at, meal_id, cook_user_id, repeating_cook_user_id, temp_cook_user_id, repeating_meal_id, temp_meal_id
+`
+
+type UpsertMealPlanDayParams struct {
+	DayName     string      `json:"day_name"`
+	MealName    pgtype.Text `json:"meal_name"`
+	HouseholdID pgtype.Int4 `json:"household_id"`
+	UserID      pgtype.Int4 `json:"user_id"`
+}
+
+func (q *Queries) UpsertMealPlanDay(ctx context.Context, arg UpsertMealPlanDayParams) (MealPlan, error) {
+	row := q.db.QueryRow(ctx, upsertMealPlanDay,
+		arg.DayName,
+		arg.MealName,
+		arg.HouseholdID,
+		arg.UserID,
+	)
+	var i MealPlan
+	err := row.Scan(
+		&i.ID,
+		&i.DayName,
+		&i.MealName,
+		&i.HouseholdID,
+		&i.UserID,
+		&i.UpdatedAt,
+		&i.MealID,
+		&i.CookUserID,
+		&i.RepeatingCookUserID,
+		&i.TempCookUserID,
+		&i.RepeatingMealID,
+		&i.TempMealID,
+	)
+	return i, err
+}
+
+const upsertShoppingList = `-- name: UpsertShoppingList :many
+INSERT INTO shopping_list (shopping_item_id, quantity, id, household_id, user_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
+ON CONFLICT DO UPDATE
+SET shopping_item_id = EXCLUDED.shopping_item_id,
+    quantity         = EXCLUDED.quantity,
+    household_id     = EXCLUDED.household_id,
+    user_id          = EXCLUDED.user_id,
+    updated_at       = now()
+RETURNING id, shopping_item_id, quantity, household_id, user_id, updated_at
+`
+
+type UpsertShoppingListParams struct {
+	ShoppingItemID int32       `json:"shopping_item_id"`
+	Quantity       int32       `json:"quantity"`
+	ID             int32       `json:"id"`
+	HouseholdID    pgtype.Int4 `json:"household_id"`
+	UserID         pgtype.Int4 `json:"user_id"`
+}
+
+func (q *Queries) UpsertShoppingList(ctx context.Context, arg UpsertShoppingListParams) ([]ShoppingList, error) {
+	rows, err := q.db.Query(ctx, upsertShoppingList,
+		arg.ShoppingItemID,
+		arg.Quantity,
+		arg.ID,
+		arg.HouseholdID,
+		arg.UserID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ShoppingList
+	for rows.Next() {
+		var i ShoppingList
+		if err := rows.Scan(
+			&i.ID,
+			&i.ShoppingItemID,
+			&i.Quantity,
+			&i.HouseholdID,
+			&i.UserID,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

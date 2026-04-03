@@ -48,9 +48,10 @@ func (e *ShoppingItemType) Scan(src interface{}) error {
 
 type NullShoppingItemType struct {
 	ShoppingItemType ShoppingItemType `json:"shopping_item_type"`
-	Valid            bool             `json:"valid"`
+	Valid            bool             `json:"valid"` // Valid is true if ShoppingItemType is not NULL
 }
 
+// Scan implements the Scanner interface.
 func (ns *NullShoppingItemType) Scan(value interface{}) error {
 	if value == nil {
 		ns.ShoppingItemType, ns.Valid = "", false
@@ -60,6 +61,7 @@ func (ns *NullShoppingItemType) Scan(value interface{}) error {
 	return ns.ShoppingItemType.Scan(value)
 }
 
+// Value implements the driver Valuer interface.
 func (ns NullShoppingItemType) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
@@ -74,12 +76,12 @@ type Household struct {
 }
 
 type HouseholdInvite struct {
-	ID                 int32            `json:"id"`
-	HouseholdID        int32            `json:"household_id"`
-	InviteCode         string           `json:"invite_code"`
-	RequestedByUserID  int32            `json:"requested_by_user_id"`
-	Status             string           `json:"status"`
-	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	ID                int32            `json:"id"`
+	HouseholdID       int32            `json:"household_id"`
+	InviteCode        string           `json:"invite_code"`
+	RequestedByUserID int32            `json:"requested_by_user_id"`
+	Status            string           `json:"status"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
 }
 
 type HouseholdMember struct {
@@ -94,11 +96,49 @@ type Meal struct {
 	DefaultPortions int32       `json:"default_portions"`
 }
 
+type MealComponent struct {
+	ParentMealID int32 `json:"parent_meal_id"`
+	SubMealID    int32 `json:"sub_meal_id"`
+	SortOrder    int32 `json:"sort_order"`
+}
+
+type MealCook struct {
+	MealID int32 `json:"meal_id"`
+	UserID int32 `json:"user_id"`
+}
+
 type MealIngredient struct {
 	MealID         int32          `json:"meal_id"`
 	ShoppingItemID int32          `json:"shopping_item_id"`
 	Quantity       pgtype.Numeric `json:"quantity"`
 	Unit           pgtype.Text    `json:"unit"`
+}
+
+type MealPlan struct {
+	ID                  int32            `json:"id"`
+	DayName             string           `json:"day_name"`
+	MealName            pgtype.Text      `json:"meal_name"`
+	HouseholdID         pgtype.Int4      `json:"household_id"`
+	UserID              pgtype.Int4      `json:"user_id"`
+	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
+	MealID              pgtype.Int4      `json:"meal_id"`
+	CookUserID          pgtype.Int4      `json:"cook_user_id"`
+	RepeatingCookUserID pgtype.Int4      `json:"repeating_cook_user_id"`
+	TempCookUserID      pgtype.Int4      `json:"temp_cook_user_id"`
+	RepeatingMealID     pgtype.Int4      `json:"repeating_meal_id"`
+	TempMealID          pgtype.Int4      `json:"temp_meal_id"`
+}
+
+type Pantry struct {
+	ID                int32            `json:"id"`
+	ShoppingItemID    int32            `json:"shopping_item_id"`
+	HouseholdID       pgtype.Int4      `json:"household_id"`
+	UserID            pgtype.Int4      `json:"user_id"`
+	PortionsRemaining pgtype.Numeric   `json:"portions_remaining"`
+	ExpiresOn         pgtype.Date      `json:"expires_on"`
+	Status            string           `json:"status"`
+	BoughtAt          pgtype.Timestamp `json:"bought_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 }
 
 type ShoppingItem struct {
@@ -111,11 +151,20 @@ type ShoppingItem struct {
 }
 
 type ShoppingList struct {
-	ID             int32       `json:"id"`
-	ShoppingItemID int32       `json:"shopping_item_id"`
-	Quantity       int32       `json:"quantity"`
-	HouseholdID    pgtype.Int4 `json:"household_id"`
-	UserID         pgtype.Int4 `json:"user_id"`
+	ID             int32            `json:"id"`
+	ShoppingItemID int32            `json:"shopping_item_id"`
+	Quantity       int32            `json:"quantity"`
+	HouseholdID    pgtype.Int4      `json:"household_id"`
+	UserID         pgtype.Int4      `json:"user_id"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+}
+
+type ShoppingListHaveIt struct {
+	ID             int32            `json:"id"`
+	ShoppingItemID int32            `json:"shopping_item_id"`
+	HouseholdID    pgtype.Int4      `json:"household_id"`
+	UserID         pgtype.Int4      `json:"user_id"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 }
 
 type User struct {
