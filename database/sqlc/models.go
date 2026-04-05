@@ -115,18 +115,22 @@ type MealIngredient struct {
 }
 
 type MealPlan struct {
-	ID                  int32            `json:"id"`
-	DayName             string           `json:"day_name"`
-	MealName            pgtype.Text      `json:"meal_name"`
-	HouseholdID         pgtype.Int4      `json:"household_id"`
-	UserID              pgtype.Int4      `json:"user_id"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	MealID              pgtype.Int4      `json:"meal_id"`
-	CookUserID          pgtype.Int4      `json:"cook_user_id"`
-	RepeatingCookUserID pgtype.Int4      `json:"repeating_cook_user_id"`
-	TempCookUserID      pgtype.Int4      `json:"temp_cook_user_id"`
-	RepeatingMealID     pgtype.Int4      `json:"repeating_meal_id"`
-	TempMealID          pgtype.Int4      `json:"temp_meal_id"`
+	ID          int32            `json:"id"`
+	DayName     string           `json:"day_name"`
+	MealName    pgtype.Text      `json:"meal_name"`
+	HouseholdID pgtype.Int4      `json:"household_id"`
+	UserID      pgtype.Int4      `json:"user_id"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	MealID      pgtype.Int4      `json:"meal_id"`
+	CookUserID  pgtype.Int4      `json:"cook_user_id"`
+	// Person who cooks on this weekday every week (standing assignment)
+	RepeatingCookUserID pgtype.Int4 `json:"repeating_cook_user_id"`
+	// One-off cook override for the next occurrence; cleared after the week rolls over
+	TempCookUserID pgtype.Int4 `json:"temp_cook_user_id"`
+	// Meal served on this weekday every week (standing assignment)
+	RepeatingMealID pgtype.Int4 `json:"repeating_meal_id"`
+	// One-off meal override for the next occurrence; cleared after the week rolls over
+	TempMealID pgtype.Int4 `json:"temp_meal_id"`
 }
 
 type Pantry struct {

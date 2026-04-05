@@ -9,4 +9,12 @@ sql:
         out: "database/sqlc"
         sql_package: "pgx/v5"
         emit_json_tags: true
-
+        overrides:
+          # GetUserByUsername returns households as a JSON_AGG column.
+          # sqlc cannot infer a Go type for aggregated JSON, so we pin it to
+          # json.RawMessage here. The authentication layer then unmarshals it
+          # into []UserHousehold at runtime.
+          - column: "get_user_by_username.households"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
