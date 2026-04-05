@@ -56,10 +56,10 @@ type LoginRequest struct {
 // their ID and display name, so the frontend can populate the selector
 // without any extra API calls.
 type LoginResponse struct {
-	ID         int32                `json:"id"`
-	Name       string               `json:"name"`
-	Username   string               `json:"username"`
-	Households []sqlc.UserHousehold `json:"households"`
+	ID         int32            `json:"id"`
+	Name       string           `json:"name"`
+	Username   string           `json:"username"`
+	Households []sqlc.Household `json:"households"`
 }
 
 func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, LoginRequest) (any, error) {
