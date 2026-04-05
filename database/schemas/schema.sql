@@ -1,3 +1,6 @@
+-- Consolidated schema (migrations 001–009)
+-- Drop and recreate cleanly for a fresh database.
+
 CREATE TYPE shopping_item_type AS ENUM (
     'fruit', 'vegetable', 'dairy', 'meat', 'meat_free', 'seafood',
     'bakery', 'pantry', 'snacks', 'frozen', 'drinks', 'cleaning',
@@ -24,21 +27,18 @@ CREATE TABLE household_members (
     PRIMARY KEY (household_id, user_id)
 );
 
--- shopping_items: portions_per_unit added in migration 002,
---                shelf_life_days added in migration 007
 CREATE TABLE shopping_items (
-    id                SERIAL PRIMARY KEY,
-    name              TEXT NOT NULL,
-    item_type         shopping_item_type NOT NULL,
-    text_id           TEXT UNIQUE,
+    id               SERIAL PRIMARY KEY,
+    name             TEXT NOT NULL,
+    item_type        shopping_item_type NOT NULL,
+    text_id          TEXT UNIQUE,
     portions_per_unit INT NOT NULL DEFAULT 1,
-    shelf_life_days   INT
+    shelf_life_days  INT
 );
 
--- shopping_list: updated_at added in migration 004
 CREATE TABLE shopping_list (
     id               SERIAL PRIMARY KEY,
-    shopping_item_id INT REFERENCES shopping_items(id) NOT NULL,
+    shopping_item_id INT NOT NULL REFERENCES shopping_items(id),
     quantity         INT NOT NULL DEFAULT 1,
     household_id     INT REFERENCES households(household_id),
     user_id          INT REFERENCES users(id),
@@ -49,20 +49,29 @@ CREATE TABLE shopping_list (
     )
 );
 
-CREATE TABLE meals (
+CREATE UNIQUE INDEX idx_shopping_list_item_household
+    ON shopping_list (shopping_item_id, household_id) WHERE household_id IS NOT NULL;
+
+CREATE UNIQUE INDEX idx_shopping_list_item_user
+    ON shopping_list (shopping_item_id, user_id) WHERE user_id IS NOT NULL;
+
+CREATE TABLE shopping_list_have_it (
     id               SERIAL PRIMARY KEY,
-    name             TEXT NOT NULL,
-    description      TEXT,
-    default_portions INT NOT NULL DEFAULT 2
+    shopping_item_id INT NOT NULL REFERENCES shopping_items(id) ON DELETE CASCADE,
+    household_id     INT REFERENCES households(household_id) ON DELETE CASCADE,
+    user_id          INT REFERENCES users(id) ON DELETE CASCADE,
+    updated_at       TIMESTAMP NOT NULL DEFAULT now(),
+    CHECK (
+        (household_id IS NOT NULL AND user_id IS NULL) OR
+        (household_id IS NULL     AND user_id IS NOT NULL)
+    )
 );
 
-CREATE TABLE meal_ingredients (
-    meal_id          INT REFERENCES meals(id) ON DELETE CASCADE,
-    shopping_item_id INT REFERENCES shopping_items(id) ON DELETE RESTRICT,
-    quantity         NUMERIC(10,2) NOT NULL DEFAULT 1,
-    unit             TEXT,
-    PRIMARY KEY (meal_id, shopping_item_id)
-);
+CREATE UNIQUE INDEX idx_have_it_item_household
+    ON shopping_list_have_it (shopping_item_id, household_id) WHERE household_id IS NOT NULL;
+
+CREATE UNIQUE INDEX idx_have_it_item_user
+    ON shopping_list_have_it (shopping_item_id, user_id) WHERE user_id IS NOT NULL;
 
 CREATE TABLE household_invites (
     id                   SERIAL PRIMARY KEY,
@@ -74,19 +83,46 @@ CREATE TABLE household_invites (
     created_at           TIMESTAMP NOT NULL DEFAULT now()
 );
 
+CREATE INDEX idx_household_invites_code      ON household_invites(invite_code);
+CREATE INDEX idx_household_invites_household ON household_invites(household_id);
+
+CREATE TABLE meals (
+    id               SERIAL PRIMARY KEY,
+    name             TEXT NOT NULL,
+    description      TEXT,
+    default_portions INT NOT NULL DEFAULT 2
+);
+
+CREATE TABLE meal_ingredients (
+    meal_id          INT REFERENCES meals(id) ON DELETE CASCADE,
+    shopping_item_id INT REFERENCES shopping_items(id) ON DELETE RESTRICT,
+    quantity         NUMERIC(10, 2) NOT NULL DEFAULT 1,
+    unit             TEXT,
+    PRIMARY KEY (meal_id, shopping_item_id)
+);
+
 CREATE TABLE meal_cooks (
     meal_id INT NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (meal_id, user_id)
 );
 
--- meal_plan: added in migration 004,
---            meal_id/cook_user_id added in migration 006,
---            repeating_*/temp_* columns added in migration 009
+CREATE TABLE meal_components (
+    parent_meal_id INT NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
+    sub_meal_id    INT NOT NULL REFERENCES meals(id) ON DELETE RESTRICT,
+    sort_order     INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (parent_meal_id, sub_meal_id),
+    CHECK (parent_meal_id <> sub_meal_id)
+);
+
+CREATE INDEX idx_meal_components_sub ON meal_components(sub_meal_id);
+
+-- meal_plan uses two partial unique indexes (not a table-level constraint)
+-- so that NULL household_id / user_id are handled correctly by PostgreSQL.
 CREATE TABLE meal_plan (
     id                     SERIAL PRIMARY KEY,
     day_name               TEXT NOT NULL,
-    meal_name              TEXT DEFAULT NULL,
+    meal_name              TEXT,
     household_id           INT REFERENCES households(household_id) ON DELETE CASCADE,
     user_id                INT REFERENCES users(id) ON DELETE CASCADE,
     updated_at             TIMESTAMP NOT NULL DEFAULT now(),
@@ -102,29 +138,21 @@ CREATE TABLE meal_plan (
     )
 );
 
--- shopping_list_have_it: added in migration 005
-CREATE TABLE shopping_list_have_it (
-    id               SERIAL PRIMARY KEY,
-    shopping_item_id INT  NOT NULL REFERENCES shopping_items(id) ON DELETE CASCADE,
-    household_id     INT  REFERENCES households(household_id) ON DELETE CASCADE,
-    user_id          INT  REFERENCES users(id) ON DELETE CASCADE,
-    updated_at       TIMESTAMP NOT NULL DEFAULT now(),
-    CHECK (
-        (household_id IS NOT NULL AND user_id IS NULL) OR
-        (household_id IS NULL     AND user_id IS NOT NULL)
-    )
-);
+CREATE UNIQUE INDEX idx_meal_plan_day_household
+    ON meal_plan (day_name, household_id) WHERE household_id IS NOT NULL;
 
--- meal_components: added in migration 007
-CREATE TABLE meal_components (
-    parent_meal_id INT NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
-    sub_meal_id    INT NOT NULL REFERENCES meals(id) ON DELETE RESTRICT,
-    sort_order     INT NOT NULL DEFAULT 0,
-    PRIMARY KEY (parent_meal_id, sub_meal_id),
-    CHECK (parent_meal_id <> sub_meal_id)
-);
+CREATE UNIQUE INDEX idx_meal_plan_day_user
+    ON meal_plan (day_name, user_id) WHERE user_id IS NOT NULL;
 
--- pantry: added in migration 007
+COMMENT ON COLUMN meal_plan.repeating_cook_user_id IS
+    'Person who cooks on this weekday every week (standing assignment)';
+COMMENT ON COLUMN meal_plan.temp_cook_user_id IS
+    'One-off cook override for the next occurrence; cleared after the week rolls over';
+COMMENT ON COLUMN meal_plan.repeating_meal_id IS
+    'Meal served on this weekday every week (standing assignment)';
+COMMENT ON COLUMN meal_plan.temp_meal_id IS
+    'One-off meal override for the next occurrence; cleared after the week rolls over';
+
 CREATE TABLE pantry (
     id                 SERIAL PRIMARY KEY,
     shopping_item_id   INT NOT NULL REFERENCES shopping_items(id) ON DELETE CASCADE,
@@ -141,3 +169,12 @@ CREATE TABLE pantry (
         (household_id IS NULL     AND user_id IS NOT NULL)
     )
 );
+
+CREATE UNIQUE INDEX idx_pantry_item_household
+    ON pantry (shopping_item_id, household_id) WHERE household_id IS NOT NULL;
+
+CREATE UNIQUE INDEX idx_pantry_item_user
+    ON pantry (shopping_item_id, user_id) WHERE user_id IS NOT NULL;
+
+CREATE INDEX idx_pantry_expires_on ON pantry(expires_on) WHERE expires_on IS NOT NULL;
+CREATE INDEX idx_pantry_status     ON pantry(status);
