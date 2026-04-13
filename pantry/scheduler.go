@@ -2,8 +2,9 @@ package pantry
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"weekly-shopping-app/internal/logger"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -29,10 +30,10 @@ func runJob(db *pgxpool.Pool) {
 	defer cancel()
 	n, err := RunExpiryJob(ctx, db)
 	if err != nil {
-		fmt.Printf("[pantry expiry] error: %v\n", err)
+		logger.Error("pantry expiry job failed", "err", err)
 		return
 	}
 	if n > 0 {
-		fmt.Printf("[pantry expiry] updated %d item(s)\n", n)
+		logger.Info("pantry expiry job completed", "items_updated", n)
 	}
 }

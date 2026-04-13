@@ -34,17 +34,6 @@ RETURNING *;
 DELETE FROM shopping_list
 WHERE id = $1;
 
--- name: UpsertShoppingList :many
-INSERT INTO shopping_list (shopping_item_id, quantity, id, household_id, user_id, updated_at)
-VALUES ($1, $2, $3, $4, $5, now())
-ON CONFLICT DO UPDATE
-SET shopping_item_id = EXCLUDED.shopping_item_id,
-    quantity         = EXCLUDED.quantity,
-    household_id     = EXCLUDED.household_id,
-    user_id          = EXCLUDED.user_id,
-    updated_at       = now()
-RETURNING *;
-
 -- name: GetMealPlan :many
 SELECT id, day_name, meal_name, household_id, user_id, updated_at
 FROM meal_plan

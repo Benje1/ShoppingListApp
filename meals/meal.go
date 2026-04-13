@@ -6,6 +6,7 @@ import (
 	"math"
 
 	sqlc "weekly-shopping-app/database/sqlc"
+	"weekly-shopping-app/internal/logger"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -407,7 +408,7 @@ func setMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, input S
 		// Add all meal ingredients (including sub-meals) to the shopping list
 		if addErr := addMealIngredientsToShoppingList(ctx, db, id, hid, uid); addErr != nil {
 			// Non-fatal — plan was saved, log and continue
-			fmt.Printf("[meal plan] warning: could not add ingredients to shopping list: %v\n", addErr)
+			logger.Warn("meal plan: could not add ingredients to shopping list", "err", addErr)
 		}
 	}
 	return day, nil

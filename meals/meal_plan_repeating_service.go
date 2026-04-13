@@ -18,6 +18,7 @@ import (
 
 	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/internal/api/httpx"
+	"weekly-shopping-app/internal/logger"
 
 	sqlc "weekly-shopping-app/database/sqlc"
 
@@ -31,9 +32,9 @@ import (
 // MealPlanDayResponseV2 values.
 func getMealPlanFullV2(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) ([]MealPlanDayResponseV2, error) {
 	q := sqlc.New(db)
-	rows, err := q.GetMealPlanFullV2(ctx, sqlc.GetMealPlanFullV2Params{
-		HouseholdID: pgtype.Int4{Int32: householdID, Valid: householdID != 0},
-		UserID:      pgtype.Int4{Int32: userID, Valid: true}},
+	rows, err := q.GetMealPlanFullV2(ctx,
+		pgtype.Int4{Int32: householdID, Valid: householdID != 0},
+		pgtype.Int4{Int32: userID, Valid: true},
 	)
 	if err != nil {
 		return nil, err
@@ -155,7 +156,7 @@ func setMealPlanDayV2(ctx context.Context, db *pgxpool.Pool, userID int32, input
 	// If an effective meal was resolved, sync ingredients to shopping list
 	if effectiveMealID != 0 {
 		if addErr := addMealIngredientsToShoppingList(ctx, db, effectiveMealID, hid, uid); addErr != nil {
-			fmt.Printf("[meal plan v2] warning: could not sync ingredients: %v\n", addErr)
+			logger.Warn("meal plan v2: could not sync ingredients", "err", addErr)
 		}
 	}
 
@@ -180,12 +181,12 @@ func rolloverWeek(ctx context.Context, db *pgxpool.Pool, userID int32, input Cle
 
 	if input.DayName != "" {
 		// Single-day rollover
-		if err := q.ClearTempOverridesForDay(ctx, sqlc.ClearTempOverridesForDayParams{DayName: input.DayName, HouseholdID: hid, UserID: uid}); err != nil {
+		if err := q.ClearTempOverridesForDay(ctx, input.DayName, hid, uid); err != nil {
 			return nil, err
 		}
 	} else {
 		// Full-week rollover
-		if err := q.ClearAllTempOverrides(ctx, sqlc.ClearAllTempOverridesParams{HouseholdID: hid, UserID: uid}); err != nil {
+		if err := q.ClearAllTempOverrides(ctx, hid, uid); err != nil {
 			return nil, err
 		}
 	}

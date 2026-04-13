@@ -313,9 +313,13 @@ func getMealPlanUpdatedAt(ctx context.Context, db *pgxpool.Pool, userID, househo
 func upsertMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, input UpsertMealPlanInput) (sqlc.MealPlanRow, error) {
 	hid, uid := scopeParams(userID, input.HouseholdID, input.Scope)
 	q := sqlc.New(db)
+	mealName := pgtype.Text{Valid: false}
+	if input.MealName != "" {
+		mealName = pgtype.Text{String: input.MealName, Valid: true}
+	}
 	return q.UpsertMealPlanDay(ctx, sqlc.UpsertMealPlanDayParams{
 		DayName:     input.DayName,
-		MealName:    input.MealName,
+		MealName:    mealName,
 		HouseholdID: hid,
 		UserID:      uid,
 	})

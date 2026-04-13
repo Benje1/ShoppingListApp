@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 
+	"weekly-shopping-app/internal/logger"
+
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -65,6 +67,6 @@ func ForceVersion(version int) error {
 		return fmt.Errorf("forcing version %d: %w", version, err)
 	}
 
-	fmt.Printf("Forced migration version to %d (dirty flag cleared)\n", version)
+	logger.Info("forced migration version, dirty flag cleared", "version", version)
 	return nil
 }
