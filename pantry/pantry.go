@@ -85,7 +85,7 @@ func expiresOn(shelfLifeDays pgtype.Int4) pgtype.Date {
 	return pgtype.Date{Time: t, Valid: true, InfinityModifier: pgtype.Finite}
 }
 
-func buildResponse(r sqlc.PantryRow) PantryItemResponse {
+func buildResponse(r sqlc.GetPantryRow) PantryItemResponse {
 	resp := PantryItemResponse{
 		ID:                r.ID,
 		ShoppingItemID:    r.ShoppingItemID,
@@ -142,7 +142,7 @@ func addToPantry(ctx context.Context, db *pgxpool.Pool, userID int32, input AddT
 		return PantryItemResponse{}, fmt.Errorf("item not found: %w", err)
 	}
 
-	entry, err := q.UpsertPantryItem(ctx, sqlc.UpsertPantryParams{
+	entry, err := q.UpsertPantryItem(ctx, sqlc.UpsertPantryItemParams{
 		ShoppingItemID:    input.ItemID,
 		HouseholdID:       hid,
 		UserID:            uid,
@@ -229,11 +229,11 @@ func cookMeal(ctx context.Context, db *pgxpool.Pool, userID int32, input CookMea
 	}
 
 	for itemID, qty := range totals {
-		_, err := q.DecrementPantryPortions(ctx, sqlc.DecrementPantryParams{
-			ShoppingItemID: itemID,
-			HouseholdID:    hid,
-			Decrement:      toNumeric(qty),
-			UserID:         uid,
+		_, err := q.DecrementPantryPortions(ctx, sqlc.DecrementPantryPortionsParams{
+			ShoppingItemID:    itemID,
+			HouseholdID:       hid,
+			PortionsRemaining: toNumeric(qty),
+			UserID:            uid,
 		})
 		if err != nil {
 			// Item not in pantry is fine — just skip
@@ -257,7 +257,10 @@ func setShelfLife(ctx context.Context, db *pgxpool.Pool, itemID int32, input Set
 	if input.Days != nil {
 		days = pgtype.Int4{Int32: *input.Days, Valid: true}
 	}
-	return sqlc.New(db).UpdateShoppingItemShelfLife(ctx, itemID, days)
+	return sqlc.New(db).UpdateShoppingItemShelfLife(ctx, sqlc.UpdateShoppingItemShelfLifeParams{
+		ID:            itemID,
+		ShelfLifeDays: days,
+	})
 }
 
 // RunExpiryJob is called by the scheduler — marks rows as expiring_soon / expired.

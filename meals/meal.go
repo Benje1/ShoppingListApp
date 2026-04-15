@@ -344,10 +344,10 @@ func nullableInt4(n int32) pgtype.Int4 {
 
 func getMealPlanFull(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) ([]MealPlanDayResponse, error) {
 	q := sqlc.New(db)
-	rows, err := q.GetMealPlanFull(ctx,
-		pgtype.Int4{Int32: householdID, Valid: householdID != 0},
-		pgtype.Int4{Int32: userID, Valid: true},
-	)
+	rows, err := q.GetMealPlanFull(ctx, sqlc.GetMealPlanFullParams{
+		HouseholdID: pgtype.Int4{Int32: householdID, Valid: householdID != 0},
+		UserID:      pgtype.Int4{Int32: userID, Valid: true},
+	})
 	if err != nil {
 		return nil, err
 	}

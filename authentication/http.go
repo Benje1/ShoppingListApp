@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"weekly-shopping-app/database"
-	sqlc "weekly-shopping-app/database/sqlc"
 	"weekly-shopping-app/internal/api/httpx"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -56,10 +55,10 @@ type LoginRequest struct {
 // their ID and display name, so the frontend can populate the selector
 // without any extra API calls.
 type LoginResponse struct {
-	ID         int32            `json:"id"`
-	Name       string           `json:"name"`
-	Username   string           `json:"username"`
-	Households []sqlc.Household `json:"households"`
+	ID         int32                    `json:"id"`
+	Name       string                   `json:"name"`
+	Username   string                   `json:"username"`
+	Households []database.UserHousehold `json:"households"`
 }
 
 func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, LoginRequest) (any, error) {

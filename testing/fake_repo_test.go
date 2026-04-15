@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"weekly-shopping-app/database"
 	sqlc "weekly-shopping-app/database/sqlc"
 )
 
@@ -17,7 +18,7 @@ func (f *FakeUserRepo) GetUserByUsername(_ context.Context, username string) (*s
 		return nil, errors.New("not found")
 	}
 	// Return empty households array — tests only care about auth, not household data
-	emptyHouseholds, _ := json.Marshal([]sqlc.UserHousehold{})
+	emptyHouseholds, _ := json.Marshal([]database.UserHousehold{})
 	return &sqlc.GetUserByUsernameRow{
 		ID:           f.User.ID,
 		Name:         f.User.Name,

@@ -271,7 +271,7 @@ func getShoppingListUpdatedAt(ctx context.Context, db *pgxpool.Pool, userID, hou
 	return result, nil
 }
 
-func addToShoppingList(ctx context.Context, db *pgxpool.Pool, userID int32, input AddToListInput) (sqlc.ShoppingListEntry, error) {
+func addToShoppingList(ctx context.Context, db *pgxpool.Pool, userID int32, input AddToListInput) (sqlc.ShoppingList, error) {
 	if input.Quantity <= 0 {
 		input.Quantity = 1
 	}
