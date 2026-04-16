@@ -246,6 +246,56 @@ func listParams(userID, householdID int32) sqlc.GetShoppingListParams {
 	return p
 }
 
+func mealPlanParams(userID, householdID int32) sqlc.GetMealPlanParams {
+	p := sqlc.GetMealPlanParams{
+		UserID: pgtype.Int4{Int32: userID, Valid: true},
+	}
+	if householdID != 0 {
+		p.HouseholdID = pgtype.Int4{Int32: householdID, Valid: true}
+	}
+	return p
+}
+
+func mealPlanUpdatedAtParams(userID, householdID int32) sqlc.GetMealPlanUpdatedAtParams {
+	p := sqlc.GetMealPlanUpdatedAtParams{
+		UserID: pgtype.Int4{Int32: userID, Valid: true},
+	}
+	if householdID != 0 {
+		p.HouseholdID = pgtype.Int4{Int32: householdID, Valid: true}
+	}
+	return p
+}
+
+func shoppingListUpdatedAtParams(userID, householdID int32) sqlc.GetShoppingListUpdatedAtParams {
+	p := sqlc.GetShoppingListUpdatedAtParams{
+		UserID: pgtype.Int4{Int32: userID, Valid: true},
+	}
+	if householdID != 0 {
+		p.HouseholdID = pgtype.Int4{Int32: householdID, Valid: true}
+	}
+	return p
+}
+
+func haveItParams(userID, householdID int32) sqlc.GetHaveItParams {
+	p := sqlc.GetHaveItParams{
+		UserID: pgtype.Int4{Int32: userID, Valid: true},
+	}
+	if householdID != 0 {
+		p.HouseholdID = pgtype.Int4{Int32: householdID, Valid: true}
+	}
+	return p
+}
+
+func haveItUpdatedAtParams(userID, householdID int32) sqlc.GetHaveItUpdatedAtParams {
+	p := sqlc.GetHaveItUpdatedAtParams{
+		UserID: pgtype.Int4{Int32: userID, Valid: true},
+	}
+	if householdID != 0 {
+		p.HouseholdID = pgtype.Int4{Int32: householdID, Valid: true}
+	}
+	return p
+}
+
 func getShoppingList(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) ([]sqlc.GetShoppingListRow, error) {
 	q := sqlc.New(db)
 	rows, err := q.GetShoppingList(ctx, listParams(userID, householdID))
@@ -260,7 +310,7 @@ func getShoppingList(ctx context.Context, db *pgxpool.Pool, userID, householdID 
 
 func getShoppingListUpdatedAt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) (map[string]any, error) {
 	q := sqlc.New(db)
-	t, err := q.GetShoppingListUpdatedAt(ctx, listParams(userID, householdID))
+	t, err := q.GetShoppingListUpdatedAt(ctx, shoppingListUpdatedAtParams(userID, householdID))
 	if err != nil {
 		return nil, err
 	}
@@ -285,21 +335,21 @@ func addToShoppingList(ctx context.Context, db *pgxpool.Pool, userID int32, inpu
 	})
 }
 
-func getMealPlan(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) ([]sqlc.MealPlanRow, error) {
+func getMealPlan(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) ([]sqlc.GetMealPlanRow, error) {
 	q := sqlc.New(db)
-	rows, err := q.GetMealPlan(ctx, listParams(userID, householdID))
+	rows, err := q.GetMealPlan(ctx, mealPlanParams(userID, householdID))
 	if err != nil {
 		return nil, err
 	}
 	if rows == nil {
-		return []sqlc.MealPlanRow{}, nil
+		return []sqlc.GetMealPlanRow{}, nil
 	}
 	return rows, nil
 }
 
 func getMealPlanUpdatedAt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) (map[string]any, error) {
 	q := sqlc.New(db)
-	t, err := q.GetMealPlanUpdatedAt(ctx, listParams(userID, householdID))
+	t, err := q.GetMealPlanUpdatedAt(ctx, mealPlanUpdatedAtParams(userID, householdID))
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +414,7 @@ type HaveItResponse struct {
 
 func getHaveIt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) (HaveItResponse, error) {
 	q := sqlc.New(db)
-	rows, err := q.GetHaveIt(ctx, listParams(userID, householdID))
+	rows, err := q.GetHaveIt(ctx, haveItParams(userID, householdID))
 	if err != nil {
 		return HaveItResponse{}, err
 	}
@@ -372,7 +422,7 @@ func getHaveIt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32)
 	for _, r := range rows {
 		ids = append(ids, r.ShoppingItemID)
 	}
-	ts, err := q.GetHaveItUpdatedAt(ctx, listParams(userID, householdID))
+	ts, err := q.GetHaveItUpdatedAt(ctx, haveItUpdatedAtParams(userID, householdID))
 	if err != nil {
 		return HaveItResponse{}, err
 	}

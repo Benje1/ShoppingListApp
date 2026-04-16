@@ -22,7 +22,7 @@ type PantryItemResponse struct {
 	ShelfLifeDays     *int32  `json:"shelf_life_days"`
 	PortionsRemaining float64 `json:"portions_remaining"`
 	ExpiresOn         *string `json:"expires_on"` // "2024-03-15" or null
-	Status            string  `json:"status"`      // fresh | expiring_soon | expired
+	Status            string  `json:"status"`     // fresh | expiring_soon | expired
 	BoughtAt          string  `json:"bought_at"`
 }
 
@@ -30,14 +30,14 @@ type PantryItemResponse struct {
 
 type AddToPantryInput struct {
 	ItemID      int32   `json:"item_id"`
-	Portions    float64 `json:"portions"`    // how many portions being added
-	Scope       string  `json:"scope"`       // "personal" or "household"
+	Portions    float64 `json:"portions"` // how many portions being added
+	Scope       string  `json:"scope"`    // "personal" or "household"
 	HouseholdID int32   `json:"household_id"`
 }
 
 type CookMealInput struct {
 	MealID      int32   `json:"meal_id"`
-	Portions    float64 `json:"portions"`    // how many portions being cooked
+	Portions    float64 `json:"portions"` // how many portions being cooked
 	Scope       string  `json:"scope"`
 	HouseholdID int32   `json:"household_id"`
 }
@@ -106,8 +106,8 @@ func buildResponse(r sqlc.GetPantryRow) PantryItemResponse {
 	return resp
 }
 
-func listParams(userID, householdID int32) sqlc.GetShoppingListParams {
-	p := sqlc.GetShoppingListParams{UserID: pgtype.Int4{Int32: userID, Valid: true}}
+func pantryParams(userID, householdID int32) sqlc.GetPantryParams {
+	p := sqlc.GetPantryParams{UserID: pgtype.Int4{Int32: userID, Valid: true}}
 	if householdID != 0 {
 		p.HouseholdID = pgtype.Int4{Int32: householdID, Valid: true}
 	}
@@ -118,7 +118,7 @@ func listParams(userID, householdID int32) sqlc.GetShoppingListParams {
 
 func getPantry(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) ([]PantryItemResponse, error) {
 	q := sqlc.New(db)
-	rows, err := q.GetPantry(ctx, listParams(userID, householdID))
+	rows, err := q.GetPantry(ctx, pantryParams(userID, householdID))
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func addToPantry(ctx context.Context, db *pgxpool.Pool, userID int32, input AddT
 	}
 
 	// Re-fetch full row for the response (UpsertPantryItem returns PantryEntry without item details)
-	rows, err := q.GetPantry(ctx, listParams(userID, input.HouseholdID))
+	rows, err := q.GetPantry(ctx, pantryParams(userID, input.HouseholdID))
 	if err != nil {
 		return PantryItemResponse{}, err
 	}
