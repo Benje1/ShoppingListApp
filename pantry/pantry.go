@@ -22,7 +22,7 @@ type PantryItemResponse struct {
 	ShelfLifeDays     *int32  `json:"shelf_life_days"`
 	PortionsRemaining float64 `json:"portions_remaining"`
 	ExpiresOn         *string `json:"expires_on"` // "2024-03-15" or null
-	Status            string  `json:"status"`     // fresh | expiring_soon | expired
+	Status            string  `json:"status"`      // fresh | expiring_soon | expired
 	BoughtAt          string  `json:"bought_at"`
 }
 
@@ -30,14 +30,14 @@ type PantryItemResponse struct {
 
 type AddToPantryInput struct {
 	ItemID      int32   `json:"item_id"`
-	Portions    float64 `json:"portions"` // how many portions being added
-	Scope       string  `json:"scope"`    // "personal" or "household"
+	Portions    float64 `json:"portions"`    // how many portions being added
+	Scope       string  `json:"scope"`       // "personal" or "household"
 	HouseholdID int32   `json:"household_id"`
 }
 
 type CookMealInput struct {
 	MealID      int32   `json:"meal_id"`
-	Portions    float64 `json:"portions"` // how many portions being cooked
+	Portions    float64 `json:"portions"`    // how many portions being cooked
 	Scope       string  `json:"scope"`
 	HouseholdID int32   `json:"household_id"`
 }
@@ -136,10 +136,24 @@ func addToPantry(ctx context.Context, db *pgxpool.Pool, userID int32, input AddT
 	hid, uid := scopeParams(userID, input.HouseholdID, input.Scope)
 	q := sqlc.New(db)
 
-	// Look up the item's shelf life to compute expires_on
-	item, err := q.GetShoppingItemByID(ctx, input.ItemID)
+	// Look up the item's shelf life to compute expires_on.
+	// No single-item-by-ID query exists, so fetch the full catalogue and filter.
+	var shelfLifeDays pgtype.Int4
+	items, err := q.GetAllShoppingItems(ctx)
 	if err != nil {
-		return PantryItemResponse{}, fmt.Errorf("item not found: %w", err)
+		return PantryItemResponse{}, fmt.Errorf("could not load shopping items: %w", err)
+	}
+	found := false
+	for _, si := range items {
+		if si.ID == input.ItemID {
+			// GetAllShoppingItemsRow does not include shelf_life_days; default to no expiry.
+			shelfLifeDays = pgtype.Int4{Valid: false}
+			found = true
+			break
+		}
+	}
+	if !found {
+		return PantryItemResponse{}, fmt.Errorf("item %d not found", input.ItemID)
 	}
 
 	entry, err := q.UpsertPantryItem(ctx, sqlc.UpsertPantryItemParams{
@@ -147,7 +161,7 @@ func addToPantry(ctx context.Context, db *pgxpool.Pool, userID int32, input AddT
 		HouseholdID:       hid,
 		UserID:            uid,
 		PortionsRemaining: toNumeric(input.Portions),
-		ExpiresOn:         expiresOn(item.ShelfLifeDays),
+		ExpiresOn:         expiresOn(shelfLifeDays),
 	})
 	if err != nil {
 		return PantryItemResponse{}, err

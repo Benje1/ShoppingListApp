@@ -275,7 +275,7 @@ func getMealCooks(ctx context.Context, db *pgxpool.Pool, mealID int32) ([]CookRe
 
 func addMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32) ([]CookResponse, error) {
 	q := sqlc.New(db)
-	if err := q.AddMealCook(ctx, mealID, userID); err != nil {
+	if err := q.AddMealCook(ctx, sqlc.AddMealCookParams{MealID: mealID, UserID: userID}); err != nil {
 		return nil, err
 	}
 	return getMealCooks(ctx, db, mealID)
@@ -283,7 +283,7 @@ func addMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32) ([
 
 func removeMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32) ([]CookResponse, error) {
 	q := sqlc.New(db)
-	if err := q.RemoveMealCook(ctx, mealID, userID); err != nil {
+	if err := q.RemoveMealCook(ctx, sqlc.RemoveMealCookParams{MealID: mealID, UserID: userID}); err != nil {
 		return nil, err
 	}
 	return getMealCooks(ctx, db, mealID)
@@ -477,7 +477,11 @@ func addMealIngredientsToShoppingList(ctx context.Context, db *pgxpool.Pool, mea
 func clearMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, input ClearMealPlanInput) error {
 	q := sqlc.New(db)
 	hid, uid := planScope(userID, input.HouseholdID, input.Scope)
-	return q.ClearMealPlanDay(ctx, input.DayName, hid, uid)
+	return q.ClearMealPlanDay(ctx, sqlc.ClearMealPlanDayParams{
+		DayName:     input.DayName,
+		HouseholdID: hid,
+		UserID:      uid,
+	})
 }
 
 func planScope(userID, householdID int32, scope string) (pgtype.Int4, pgtype.Int4) {
@@ -544,7 +548,7 @@ func addComponent(ctx context.Context, db *pgxpool.Pool, parentID int32, input A
 			return nil, fmt.Errorf("adding this component would create a cycle")
 		}
 	}
-	if err := q.AddMealComponent(ctx, parentID, input.SubMealID, input.SortOrder); err != nil {
+	if err := q.AddMealComponent(ctx, sqlc.AddMealComponentParams{ParentMealID: parentID, SubMealID: input.SubMealID, SortOrder: input.SortOrder}); err != nil {
 		return nil, err
 	}
 	return getComponents(ctx, db, parentID)
@@ -552,7 +556,7 @@ func addComponent(ctx context.Context, db *pgxpool.Pool, parentID int32, input A
 
 func removeComponent(ctx context.Context, db *pgxpool.Pool, parentID int32, input RemoveComponentInput) ([]ComponentResponse, error) {
 	q := sqlc.New(db)
-	if err := q.RemoveMealComponent(ctx, parentID, input.SubMealID); err != nil {
+	if err := q.RemoveMealComponent(ctx, sqlc.RemoveMealComponentParams{ParentMealID: parentID, SubMealID: input.SubMealID}); err != nil {
 		return nil, err
 	}
 	return getComponents(ctx, db, parentID)

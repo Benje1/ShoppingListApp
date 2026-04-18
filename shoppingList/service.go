@@ -310,12 +310,12 @@ func getShoppingList(ctx context.Context, db *pgxpool.Pool, userID, householdID 
 
 func getShoppingListUpdatedAt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) (map[string]any, error) {
 	q := sqlc.New(db)
-	t, err := q.GetShoppingListUpdatedAt(ctx, shoppingListUpdatedAtParams(userID, householdID))
+	raw, err := q.GetShoppingListUpdatedAt(ctx, shoppingListUpdatedAtParams(userID, householdID))
 	if err != nil {
 		return nil, err
 	}
 	result := map[string]any{"last_updated": nil}
-	if t.Valid {
+	if t, ok := raw.(pgtype.Timestamp); ok && t.Valid {
 		result["last_updated"] = t.Time.UTC().Format("2006-01-02T15:04:05Z")
 	}
 	return result, nil
@@ -349,18 +349,18 @@ func getMealPlan(ctx context.Context, db *pgxpool.Pool, userID, householdID int3
 
 func getMealPlanUpdatedAt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) (map[string]any, error) {
 	q := sqlc.New(db)
-	t, err := q.GetMealPlanUpdatedAt(ctx, mealPlanUpdatedAtParams(userID, householdID))
+	raw, err := q.GetMealPlanUpdatedAt(ctx, mealPlanUpdatedAtParams(userID, householdID))
 	if err != nil {
 		return nil, err
 	}
 	result := map[string]any{"last_updated": nil}
-	if t.Valid {
+	if t, ok := raw.(pgtype.Timestamp); ok && t.Valid {
 		result["last_updated"] = t.Time.UTC().Format("2006-01-02T15:04:05Z")
 	}
 	return result, nil
 }
 
-func upsertMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, input UpsertMealPlanInput) (sqlc.MealPlanRow, error) {
+func upsertMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, input UpsertMealPlanInput) (sqlc.MealPlan, error) {
 	hid, uid := scopeParams(userID, input.HouseholdID, input.Scope)
 	q := sqlc.New(db)
 	mealName := pgtype.Text{Valid: false}
@@ -427,8 +427,8 @@ func getHaveIt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32)
 		return HaveItResponse{}, err
 	}
 	var lastUpdated *string
-	if ts.Valid {
-		s := ts.Time.UTC().Format("2006-01-02T15:04:05Z")
+	if t, ok := ts.(pgtype.Timestamp); ok && t.Valid {
+		s := t.Time.UTC().Format("2006-01-02T15:04:05Z")
 		lastUpdated = &s
 	}
 	return HaveItResponse{ItemIDs: ids, LastUpdated: lastUpdated}, nil

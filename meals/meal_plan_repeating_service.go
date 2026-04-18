@@ -32,10 +32,10 @@ import (
 // MealPlanDayResponseV2 values.
 func getMealPlanFullV2(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) ([]MealPlanDayResponseV2, error) {
 	q := sqlc.New(db)
-	rows, err := q.GetMealPlanFullV2(ctx,
-		pgtype.Int4{Int32: householdID, Valid: householdID != 0},
-		pgtype.Int4{Int32: userID, Valid: true},
-	)
+	rows, err := q.GetMealPlanFullV2(ctx, sqlc.GetMealPlanFullV2Params{
+		HouseholdID: pgtype.Int4{Int32: householdID, Valid: householdID != 0},
+		UserID:      pgtype.Int4{Int32: userID, Valid: true},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -181,12 +181,12 @@ func rolloverWeek(ctx context.Context, db *pgxpool.Pool, userID int32, input Cle
 
 	if input.DayName != "" {
 		// Single-day rollover
-		if err := q.ClearTempOverridesForDay(ctx, input.DayName, hid, uid); err != nil {
+		if err := q.ClearTempOverridesForDay(ctx, sqlc.ClearTempOverridesForDayParams{DayName: input.DayName, HouseholdID: hid, UserID: uid}); err != nil {
 			return nil, err
 		}
 	} else {
 		// Full-week rollover
-		if err := q.ClearAllTempOverrides(ctx, hid, uid); err != nil {
+		if err := q.ClearAllTempOverrides(ctx, sqlc.ClearAllTempOverridesParams{HouseholdID: hid, UserID: uid}); err != nil {
 			return nil, err
 		}
 	}
