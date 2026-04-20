@@ -58,7 +58,7 @@ func RegisterShoppingListRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(
 				if err != nil {
 					return nil, err
 				}
-				return getShoppingList(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
+				return getShoppingList(r.Context(), db, sess.UserID, sess.GetAllHouseholdsID())
 			}
 		},
 	})
@@ -72,7 +72,7 @@ func RegisterShoppingListRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(
 				if err != nil {
 					return nil, err
 				}
-				return getShoppingListUpdatedAt(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
+				return getShoppingListUpdatedAt(r.Context(), db, sess.UserID, sess.GetAllHouseholdsID())
 			}
 		},
 	})
@@ -236,16 +236,6 @@ func scopeParams(userID, householdID int32, scope string) (pgtype.Int4, pgtype.I
 	return hid, uid
 }
 
-func listParams(userID, householdID int32) sqlc.GetShoppingListParams {
-	p := sqlc.GetShoppingListParams{
-		UserID: pgtype.Int4{Int32: userID, Valid: true},
-	}
-	if householdID != 0 {
-		p.HouseholdID = pgtype.Int4{Int32: householdID, Valid: true}
-	}
-	return p
-}
-
 func mealPlanParams(userID, householdID int32) sqlc.GetMealPlanParams {
 	p := sqlc.GetMealPlanParams{
 		UserID: pgtype.Int4{Int32: userID, Valid: true},
@@ -258,16 +248,6 @@ func mealPlanParams(userID, householdID int32) sqlc.GetMealPlanParams {
 
 func mealPlanUpdatedAtParams(userID, householdID int32) sqlc.GetMealPlanUpdatedAtParams {
 	p := sqlc.GetMealPlanUpdatedAtParams{
-		UserID: pgtype.Int4{Int32: userID, Valid: true},
-	}
-	if householdID != 0 {
-		p.HouseholdID = pgtype.Int4{Int32: householdID, Valid: true}
-	}
-	return p
-}
-
-func shoppingListUpdatedAtParams(userID, householdID int32) sqlc.GetShoppingListUpdatedAtParams {
-	p := sqlc.GetShoppingListUpdatedAtParams{
 		UserID: pgtype.Int4{Int32: userID, Valid: true},
 	}
 	if householdID != 0 {
@@ -296,22 +276,55 @@ func haveItUpdatedAtParams(userID, householdID int32) sqlc.GetHaveItUpdatedAtPar
 	return p
 }
 
-func getShoppingList(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) ([]sqlc.GetShoppingListRow, error) {
-	q := sqlc.New(db)
-	rows, err := q.GetShoppingList(ctx, listParams(userID, householdID))
+func getShoppingList(ctx context.Context, db *pgxpool.Pool, userID int32, householdIDs []int32) ([]sqlc.GetShoppingListRow, error) {
+	// GetShoppingList uses ANY($1) in SQL which requires an array, not a scalar pgtype.Int4.
+	// We query directly to pass []int32 correctly via pgx.
+	const query = `SELECT
+    sl.id,
+    si.id   AS item_id,
+    si.name,
+    si.item_type,
+    si.portions_per_unit,
+    sl.quantity,
+    sl.updated_at,
+    CASE WHEN sl.household_id IS NOT NULL THEN 'household' ELSE 'personal' END AS scope
+FROM shopping_list sl
+JOIN shopping_items si ON sl.shopping_item_id = si.id
+WHERE sl.household_id = ANY($1) OR sl.user_id = $2
+ORDER BY si.item_type, si.name`
+
+	if len(householdIDs) == 0 {
+		householdIDs = []int32{}
+	}
+	rows, err := db.Query(ctx, query, householdIDs, userID)
 	if err != nil {
 		return nil, err
 	}
-	if rows == nil {
+	defer rows.Close()
+	var items []sqlc.GetShoppingListRow
+	for rows.Next() {
+		var i sqlc.GetShoppingListRow
+		if err := rows.Scan(&i.ID, &i.ItemID, &i.Name, &i.ItemType, &i.PortionsPerUnit, &i.Quantity, &i.UpdatedAt, &i.Scope); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if items == nil {
 		return []sqlc.GetShoppingListRow{}, nil
 	}
-	return rows, nil
+	return items, nil
 }
 
-func getShoppingListUpdatedAt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) (map[string]any, error) {
-	q := sqlc.New(db)
-	raw, err := q.GetShoppingListUpdatedAt(ctx, shoppingListUpdatedAtParams(userID, householdID))
-	if err != nil {
+func getShoppingListUpdatedAt(ctx context.Context, db *pgxpool.Pool, userID int32, householdIDs []int32) (map[string]any, error) {
+	const query = `SELECT MAX(updated_at) AS last_updated FROM shopping_list WHERE household_id = ANY($1) OR user_id = $2`
+	if len(householdIDs) == 0 {
+		householdIDs = []int32{}
+	}
+	var raw interface{}
+	if err := db.QueryRow(ctx, query, householdIDs, userID).Scan(&raw); err != nil {
 		return nil, err
 	}
 	result := map[string]any{"last_updated": nil}
