@@ -14,6 +14,7 @@ import (
 	"weekly-shopping-app/meals"
 	"weekly-shopping-app/pantry"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
 
@@ -60,14 +61,18 @@ func main() {
 	handler := middleware.MiddlewareWrapper(mux)
 
 	// Background jobs
-	authentication.StartSessionCleanup()
-	pantry.StartExpiryScheduler(pool)
-	meals.StartWeekScheduler(pool)
+	startBackgroundTasks(pool)
 
 	logger.Info("server listening", "addr", ":8080")
 	if err := http.ListenAndServe(":8080", handler); err != nil {
 		logger.Error("server stopped", "err", err)
 	}
+}
+
+func startBackgroundTasks(pool *pgxpool.Pool) {
+	authentication.StartSessionCleanup()
+	pantry.StartExpiryScheduler(pool)
+	meals.StartWeekScheduler(pool)
 }
 
 func loadEnv() {
