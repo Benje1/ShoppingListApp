@@ -11,6 +11,7 @@ import (
 	"weekly-shopping-app/internal/api"
 	"weekly-shopping-app/internal/api/middleware"
 	"weekly-shopping-app/internal/logger"
+	"weekly-shopping-app/meals"
 	"weekly-shopping-app/pantry"
 
 	"github.com/joho/godotenv"
@@ -61,6 +62,7 @@ func main() {
 	// Background jobs
 	authentication.StartSessionCleanup()
 	pantry.StartExpiryScheduler(pool)
+	meals.StartWeekScheduler(pool)
 
 	logger.Info("server listening", "addr", ":8080")
 	if err := http.ListenAndServe(":8080", handler); err != nil {
