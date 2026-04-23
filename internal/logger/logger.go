@@ -15,9 +15,12 @@
 package logger
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
+	"runtime"
+	"time"
 )
 
 // L is the package-level logger. Call Init before using it; it falls back
@@ -55,8 +58,22 @@ func Init(logDir string) error {
 // ── Convenience wrappers ──────────────────────────────────────────────────────
 // These mirror the slog top-level functions so callers don't need to import
 // both packages.
+func logWithCorrectSource(level slog.Level, msg string, args ...any) {
+	var pcs [1]uintptr
+	// skip:
+	// 0 = runtime.Callers
+	// 1 = logWithCorrectSource
+	// 2 = Debug/Info/Warn/Error wrapper
+	// 3 = actual caller ← this is what we want
+	runtime.Callers(3, pcs[:])
 
-func Debug(msg string, args ...any) { L.Debug(msg, args...) }
-func Info(msg string, args ...any)  { L.Info(msg, args...) }
-func Warn(msg string, args ...any)  { L.Warn(msg, args...) }
-func Error(msg string, args ...any) { L.Error(msg, args...) }
+	r := slog.NewRecord(time.Now(), level, msg, pcs[0])
+	r.Add(args...)
+
+	_ = L.Handler().Handle(context.Background(), r)
+}
+
+func Debug(msg string, args ...any) { logWithCorrectSource(slog.LevelDebug, msg, args...) }
+func Info(msg string, args ...any)  { logWithCorrectSource(slog.LevelInfo, msg, args...) }
+func Warn(msg string, args ...any)  { logWithCorrectSource(slog.LevelWarn, msg, args...) }
+func Error(msg string, args ...any) { logWithCorrectSource(slog.LevelError, msg, args...) }

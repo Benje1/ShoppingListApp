@@ -3,20 +3,27 @@ package meals
 // meal_plan_repeating_service.go
 //
 // Business logic + HTTP route handlers for the four-slot meal plan
-// introduced in migration 009 (repeating_cook, temp_cook, repeating_meal, temp_meal).
+// introduced in migration 009 (repeating_cook, temp_cook, repeating_meal, temp_meal)
+// and extended in migration 010 (week_start DATE column).
 //
 // Routes added to the existing /meals router:
 //
-//   GET  /meals/plan/v2          — full week plan with all four slots
-//   POST /meals/plan/v2/set      — upsert a day (all four slots + effective values)
-//   POST /meals/plan/v2/rollover — promote repeating → effective, clear all temp fields
+//   GET  /meals/plan/v2               — this week's plan with all four slots
+//   GET  /meals/plan/v2/next          — next week's plan with all four slots
+//   POST /meals/plan/v2/set           — upsert a day for a specific week
+//   POST /meals/plan/v2/rollover      — promote repeating → effective, clear temps
+//
+// The week to read/write is always identified by its Monday date (week_start).
+// Callers pass week_offset: 0 = this week, 1 = next week.
 
 import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"weekly-shopping-app/authentication"
+	"weekly-shopping-app/database"
 	"weekly-shopping-app/internal/api/httpx"
 	"weekly-shopping-app/internal/logger"
 
@@ -28,11 +35,11 @@ import (
 
 // ── Business logic ────────────────────────────────────────────────────────────
 
-// getMealPlanFullV2 loads the week plan and maps the four-slot rows into
-// MealPlanDayResponseV2 values.
-func getMealPlanFullV2(ctx context.Context, db *pgxpool.Pool, userID, householdID int32) ([]MealPlanDayResponseV2, error) {
-	q := sqlc.New(db)
-	rows, err := q.GetMealPlanFullV2(ctx, sqlc.GetMealPlanFullV2Params{
+// getMealPlanWeek loads one week's plan and maps the four-slot rows into
+// MealPlanDayResponseV2 values. weekStart must be a Monday.
+func getMealPlanWeek(ctx context.Context, db *pgxpool.Pool, userID, householdID int32, weekStart time.Time) ([]MealPlanDayResponseV2, error) {
+	rows, err := database.GetWeekPlan(ctx, db, database.GetWeekPlanParams{
+		WeekStart:   weekStart,
 		HouseholdID: pgtype.Int4{Int32: householdID, Valid: householdID != 0},
 		UserID:      pgtype.Int4{Int32: userID, Valid: true},
 	})
@@ -111,12 +118,15 @@ func getMealPlanFullV2(ctx context.Context, db *pgxpool.Pool, userID, householdI
 	return out, nil
 }
 
-// setMealPlanDayV2 upserts a single day with all four slots.
-// The effective meal_id / cook_user_id are derived from the temp-beats-repeating
-// priority rule so the existing shopping-list logic keeps working unchanged.
+// setMealPlanDayV2 upserts a single day within the week identified by
+// input.WeekOffset (0 = this week, 1 = next week).
 func setMealPlanDayV2(ctx context.Context, db *pgxpool.Pool, userID int32, input SetMealPlanInputV2) (*MealPlanDayResponseV2, error) {
-	q := sqlc.New(db)
 	hid, uid := planScope(userID, input.HouseholdID, input.Scope)
+
+	weekStart := database.WeekStart(time.Now())
+	if input.WeekOffset == 1 {
+		weekStart = weekStart.AddDate(0, 0, 7)
+	}
 
 	// Resolve effective meal: explicit override > temp > repeating
 	effectiveMealID := input.MealID
@@ -138,8 +148,9 @@ func setMealPlanDayV2(ctx context.Context, db *pgxpool.Pool, userID int32, input
 		}
 	}
 
-	_, err := q.SetMealPlanDayV2(ctx, sqlc.SetMealPlanDayV2Params{
+	if err := database.SetWeekPlanDay(ctx, db, database.SetWeekPlanDayParams{
 		DayName:             input.DayName,
+		WeekStart:           weekStart,
 		MealID:              nullableInt4(effectiveMealID),
 		CookUserID:          nullableInt4(effectiveCookID),
 		RepeatingMealID:     nullableInt4(input.RepeatingMealID),
@@ -148,8 +159,7 @@ func setMealPlanDayV2(ctx context.Context, db *pgxpool.Pool, userID int32, input
 		TempCookUserID:      nullableInt4(input.TempCookUserID),
 		HouseholdID:         hid,
 		UserID:              uid,
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
@@ -161,7 +171,7 @@ func setMealPlanDayV2(ctx context.Context, db *pgxpool.Pool, userID int32, input
 	}
 
 	// Re-fetch the full day to return enriched names
-	days, err := getMealPlanFullV2(ctx, db, userID, input.HouseholdID)
+	days, err := getMealPlanWeek(ctx, db, userID, input.HouseholdID, weekStart)
 	if err != nil {
 		return nil, err
 	}
@@ -175,32 +185,38 @@ func setMealPlanDayV2(ctx context.Context, db *pgxpool.Pool, userID int32, input
 
 // rolloverWeek promotes repeating values into the effective slots and clears
 // all temp overrides for a given household or user scope.
+// It operates on the current week's rows only.
 func rolloverWeek(ctx context.Context, db *pgxpool.Pool, userID int32, input ClearTempInput) ([]MealPlanDayResponseV2, error) {
 	q := sqlc.New(db)
 	hid, uid := planScope(userID, input.HouseholdID, input.Scope)
 
 	if input.DayName != "" {
-		// Single-day rollover
-		if err := q.ClearTempOverridesForDay(ctx, sqlc.ClearTempOverridesForDayParams{DayName: input.DayName, HouseholdID: hid, UserID: uid}); err != nil {
+		if err := q.ClearTempOverridesForDay(ctx, sqlc.ClearTempOverridesForDayParams{
+			DayName:     input.DayName,
+			HouseholdID: hid,
+			UserID:      uid,
+		}); err != nil {
 			return nil, err
 		}
 	} else {
-		// Full-week rollover
-		if err := q.ClearAllTempOverrides(ctx, sqlc.ClearAllTempOverridesParams{HouseholdID: hid, UserID: uid}); err != nil {
+		if err := q.ClearAllTempOverrides(ctx, sqlc.ClearAllTempOverridesParams{
+			HouseholdID: hid,
+			UserID:      uid,
+		}); err != nil {
 			return nil, err
 		}
 	}
 
-	return getMealPlanFullV2(ctx, db, userID, input.HouseholdID)
+	weekStart := database.WeekStart(time.Now())
+	return getMealPlanWeek(ctx, db, userID, input.HouseholdID, weekStart)
 }
 
 // ── HTTP route registration ───────────────────────────────────────────────────
 
 // RegisterRepeatingPlanRoutes adds the v2 plan endpoints to an existing meals router.
-// Call this from registerPlanAndCookRoutes (or RegisterMealRoutes) after the v1 routes.
 func RegisterRepeatingPlanRoutes(r *Router, db *pgxpool.Pool) {
 
-	// GET /meals/plan/v2 — full week with all four slots
+	// GET /meals/plan/v2 — this week's plan with all four slots
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "/plan/v2", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
@@ -209,12 +225,28 @@ func RegisterRepeatingPlanRoutes(r *Router, db *pgxpool.Pool) {
 				if err != nil {
 					return nil, err
 				}
-				return getMealPlanFullV2(req.Context(), db, sess.UserID, sess.FirstHouseholdID())
+				weekStart := database.WeekStart(time.Now())
+				return getMealPlanWeek(req.Context(), db, sess.UserID, sess.FirstHouseholdID(), weekStart)
 			}
 		},
 	})
 
-	// POST /meals/plan/v2/set — upsert a day with all four slots
+	// GET /meals/plan/v2/next — next week's plan with all four slots
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path: "/plan/v2/next", Method: "GET", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(req *http.Request, _ struct{}) (any, error) {
+				sess, err := authentication.SessionFromContext(req)
+				if err != nil {
+					return nil, err
+				}
+				weekStart := database.WeekStart(time.Now()).AddDate(0, 0, 7)
+				return getMealPlanWeek(req.Context(), db, sess.UserID, sess.FirstHouseholdID(), weekStart)
+			}
+		},
+	})
+
+	// POST /meals/plan/v2/set — upsert a day (week_offset: 0=this week, 1=next week)
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[SetMealPlanInputV2]{
 		Path: "/plan/v2/set", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, SetMealPlanInputV2) (any, error) {

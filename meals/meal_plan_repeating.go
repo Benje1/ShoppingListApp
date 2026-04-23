@@ -67,6 +67,9 @@ type SetMealPlanInputV2 struct {
 	Scope       string `json:"scope"`
 	HouseholdID int32  `json:"household_id"`
 
+	// WeekOffset selects which week to write: 0 = this week (default), 1 = next week.
+	WeekOffset int `json:"week_offset"`
+
 	// Effective overrides (replaces both slots at once if provided)
 	MealID     int32 `json:"meal_id"`
 	CookUserID int32 `json:"cook_user_id"`
