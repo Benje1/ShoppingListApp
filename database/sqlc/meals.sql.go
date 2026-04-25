@@ -87,7 +87,12 @@ type CreateMealParams struct {
 }
 
 func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, error) {
-	row := q.db.QueryRow(ctx, createMeal, arg.Name, arg.Description, arg.DefaultPortions, arg.Season)
+	row := q.db.QueryRow(ctx, createMeal,
+		arg.Name,
+		arg.Description,
+		arg.DefaultPortions,
+		arg.Season,
+	)
 	var i Meal
 	err := row.Scan(
 		&i.ID,
@@ -451,7 +456,7 @@ DO UPDATE SET
     meal_id      = EXCLUDED.meal_id,
     cook_user_id = EXCLUDED.cook_user_id,
     updated_at   = now()
-RETURNING id, day_name, meal_name, household_id, user_id, updated_at, meal_id, cook_user_id, repeating_cook_user_id, temp_cook_user_id, repeating_meal_id, temp_meal_id
+RETURNING id, day_name, week_start, meal_name, household_id, user_id, updated_at, meal_id, cook_user_id, repeating_cook_user_id, temp_cook_user_id, repeating_meal_id, temp_meal_id
 `
 
 type SetMealPlanDayParams struct {
@@ -474,6 +479,7 @@ func (q *Queries) SetMealPlanDay(ctx context.Context, arg SetMealPlanDayParams) 
 	err := row.Scan(
 		&i.ID,
 		&i.DayName,
+		&i.WeekStart,
 		&i.MealName,
 		&i.HouseholdID,
 		&i.UserID,

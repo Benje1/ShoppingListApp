@@ -134,11 +134,11 @@ type HouseholdMember struct {
 }
 
 type Meal struct {
-	ID              int32      `json:"id"`
-	Name            string     `json:"name"`
+	ID              int32       `json:"id"`
+	Name            string      `json:"name"`
 	Description     pgtype.Text `json:"description"`
-	DefaultPortions int32      `json:"default_portions"`
-	Season          NullSeason `json:"season"`
+	DefaultPortions int32       `json:"default_portions"`
+	Season          NullSeason  `json:"season"`
 }
 
 type MealComponent struct {
@@ -160,8 +160,10 @@ type MealIngredient struct {
 }
 
 type MealPlan struct {
-	ID          int32            `json:"id"`
-	DayName     string           `json:"day_name"`
+	ID      int32  `json:"id"`
+	DayName string `json:"day_name"`
+	// Monday of the ISO week this plan row belongs to
+	WeekStart   pgtype.Date      `json:"week_start"`
 	MealName    pgtype.Text      `json:"meal_name"`
 	HouseholdID pgtype.Int4      `json:"household_id"`
 	UserID      pgtype.Int4      `json:"user_id"`

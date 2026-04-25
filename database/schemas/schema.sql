@@ -1,4 +1,4 @@
--- Consolidated schema (migrations 001–009)
+-- Consolidated schema (migrations 001–011)
 -- Drop and recreate cleanly for a fresh database.
 
 CREATE TYPE shopping_item_type AS ENUM (
@@ -6,6 +6,8 @@ CREATE TYPE shopping_item_type AS ENUM (
     'bakery', 'pantry', 'snacks', 'frozen', 'drinks', 'cleaning',
     'toiletries', 'baby', 'health', 'household', 'spices', 'condiments'
 );
+
+CREATE TYPE season AS ENUM ('spring', 'summer', 'autumn', 'winter');
 
 CREATE TABLE households (
     household_id SERIAL PRIMARY KEY,
@@ -28,12 +30,12 @@ CREATE TABLE household_members (
 );
 
 CREATE TABLE shopping_items (
-    id               SERIAL PRIMARY KEY,
-    name             TEXT NOT NULL,
-    item_type        shopping_item_type NOT NULL,
-    text_id          TEXT UNIQUE,
+    id                SERIAL PRIMARY KEY,
+    name              TEXT NOT NULL,
+    item_type         shopping_item_type NOT NULL,
+    text_id           TEXT UNIQUE,
     portions_per_unit INT NOT NULL DEFAULT 1,
-    shelf_life_days  INT
+    shelf_life_days   INT
 );
 
 CREATE TABLE shopping_list (
@@ -90,7 +92,8 @@ CREATE TABLE meals (
     id               SERIAL PRIMARY KEY,
     name             TEXT NOT NULL,
     description      TEXT,
-    default_portions INT NOT NULL DEFAULT 2
+    default_portions INT NOT NULL DEFAULT 2,
+    season           season NULL
 );
 
 CREATE TABLE meal_ingredients (
@@ -117,11 +120,12 @@ CREATE TABLE meal_components (
 
 CREATE INDEX idx_meal_components_sub ON meal_components(sub_meal_id);
 
--- meal_plan uses two partial unique indexes (not a table-level constraint)
--- so that NULL household_id / user_id are handled correctly by PostgreSQL.
+-- meal_plan uses two partial unique indexes per scope (household / user),
+-- each including week_start so multiple weeks can coexist (migration 010).
 CREATE TABLE meal_plan (
     id                     SERIAL PRIMARY KEY,
     day_name               TEXT NOT NULL,
+    week_start             DATE NOT NULL DEFAULT (DATE_TRUNC('week', CURRENT_DATE)::DATE),
     meal_name              TEXT,
     household_id           INT REFERENCES households(household_id) ON DELETE CASCADE,
     user_id                INT REFERENCES users(id) ON DELETE CASCADE,
@@ -138,12 +142,14 @@ CREATE TABLE meal_plan (
     )
 );
 
-CREATE UNIQUE INDEX idx_meal_plan_day_household
-    ON meal_plan (day_name, household_id) WHERE household_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_meal_plan_day_week_household
+    ON meal_plan (day_name, week_start, household_id) WHERE household_id IS NOT NULL;
 
-CREATE UNIQUE INDEX idx_meal_plan_day_user
-    ON meal_plan (day_name, user_id) WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_meal_plan_day_week_user
+    ON meal_plan (day_name, week_start, user_id) WHERE user_id IS NOT NULL;
 
+COMMENT ON COLUMN meal_plan.week_start IS
+    'Monday of the ISO week this plan row belongs to';
 COMMENT ON COLUMN meal_plan.repeating_cook_user_id IS
     'Person who cooks on this weekday every week (standing assignment)';
 COMMENT ON COLUMN meal_plan.temp_cook_user_id IS

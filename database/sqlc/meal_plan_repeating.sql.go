@@ -187,16 +187,16 @@ func (q *Queries) GetMealPlanFullV2(ctx context.Context, arg GetMealPlanFullV2Pa
 	return items, nil
 }
 
-const setMealPlanDayV2 = `-- name: SetMealPlanDayV2 :one
+const setMealPlanDayV2Household = `-- name: SetMealPlanDayV2Household :one
 INSERT INTO meal_plan (
-    day_name,
+    day_name, week_start,
     meal_id,          cook_user_id,
     repeating_meal_id, repeating_cook_user_id,
     temp_meal_id,      temp_cook_user_id,
     household_id, user_id, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
-ON CONFLICT (day_name, household_id) WHERE household_id IS NOT NULL
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, now())
+ON CONFLICT (day_name, week_start, household_id) WHERE household_id IS NOT NULL
 DO UPDATE SET
     meal_id                 = EXCLUDED.meal_id,
     cook_user_id            = EXCLUDED.cook_user_id,
@@ -205,11 +205,12 @@ DO UPDATE SET
     temp_meal_id            = EXCLUDED.temp_meal_id,
     temp_cook_user_id       = EXCLUDED.temp_cook_user_id,
     updated_at              = now()
-RETURNING id, day_name, meal_name, household_id, user_id, updated_at, meal_id, cook_user_id, repeating_cook_user_id, temp_cook_user_id, repeating_meal_id, temp_meal_id
+RETURNING id, day_name, week_start, meal_name, household_id, user_id, updated_at, meal_id, cook_user_id, repeating_cook_user_id, temp_cook_user_id, repeating_meal_id, temp_meal_id
 `
 
-type SetMealPlanDayV2Params struct {
+type SetMealPlanDayV2HouseholdParams struct {
 	DayName             string      `json:"day_name"`
+	WeekStart           pgtype.Date `json:"week_start"`
 	MealID              pgtype.Int4 `json:"meal_id"`
 	CookUserID          pgtype.Int4 `json:"cook_user_id"`
 	RepeatingMealID     pgtype.Int4 `json:"repeating_meal_id"`
@@ -217,14 +218,14 @@ type SetMealPlanDayV2Params struct {
 	TempMealID          pgtype.Int4 `json:"temp_meal_id"`
 	TempCookUserID      pgtype.Int4 `json:"temp_cook_user_id"`
 	HouseholdID         pgtype.Int4 `json:"household_id"`
-	UserID              pgtype.Int4 `json:"user_id"`
 }
 
-// Upserts a day's entry, including the four repeating/temp slots.
-// Pass 0 for any int field to store NULL.
-func (q *Queries) SetMealPlanDayV2(ctx context.Context, arg SetMealPlanDayV2Params) (MealPlan, error) {
-	row := q.db.QueryRow(ctx, setMealPlanDayV2,
+// Upserts a household-scoped day entry, including the four repeating/temp slots.
+// Uses the idx_meal_plan_day_week_household partial index (migration 010).
+func (q *Queries) SetMealPlanDayV2Household(ctx context.Context, arg SetMealPlanDayV2HouseholdParams) (MealPlan, error) {
+	row := q.db.QueryRow(ctx, setMealPlanDayV2Household,
 		arg.DayName,
+		arg.WeekStart,
 		arg.MealID,
 		arg.CookUserID,
 		arg.RepeatingMealID,
@@ -232,12 +233,156 @@ func (q *Queries) SetMealPlanDayV2(ctx context.Context, arg SetMealPlanDayV2Para
 		arg.TempMealID,
 		arg.TempCookUserID,
 		arg.HouseholdID,
+	)
+	var i MealPlan
+	err := row.Scan(
+		&i.ID,
+		&i.DayName,
+		&i.WeekStart,
+		&i.MealName,
+		&i.HouseholdID,
+		&i.UserID,
+		&i.UpdatedAt,
+		&i.MealID,
+		&i.CookUserID,
+		&i.RepeatingCookUserID,
+		&i.TempCookUserID,
+		&i.RepeatingMealID,
+		&i.TempMealID,
+	)
+	return i, err
+}
+
+const setMealPlanDayV2User = `-- name: SetMealPlanDayV2User :one
+INSERT INTO meal_plan (
+    day_name, week_start,
+    meal_id,          cook_user_id,
+    repeating_meal_id, repeating_cook_user_id,
+    temp_meal_id,      temp_cook_user_id,
+    household_id, user_id, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9, now())
+ON CONFLICT (day_name, week_start, user_id) WHERE user_id IS NOT NULL
+DO UPDATE SET
+    meal_id                 = EXCLUDED.meal_id,
+    cook_user_id            = EXCLUDED.cook_user_id,
+    repeating_meal_id       = EXCLUDED.repeating_meal_id,
+    repeating_cook_user_id  = EXCLUDED.repeating_cook_user_id,
+    temp_meal_id            = EXCLUDED.temp_meal_id,
+    temp_cook_user_id       = EXCLUDED.temp_cook_user_id,
+    updated_at              = now()
+RETURNING id, day_name, week_start, meal_name, household_id, user_id, updated_at, meal_id, cook_user_id, repeating_cook_user_id, temp_cook_user_id, repeating_meal_id, temp_meal_id
+`
+
+type SetMealPlanDayV2UserParams struct {
+	DayName             string      `json:"day_name"`
+	WeekStart           pgtype.Date `json:"week_start"`
+	MealID              pgtype.Int4 `json:"meal_id"`
+	CookUserID          pgtype.Int4 `json:"cook_user_id"`
+	RepeatingMealID     pgtype.Int4 `json:"repeating_meal_id"`
+	RepeatingCookUserID pgtype.Int4 `json:"repeating_cook_user_id"`
+	TempMealID          pgtype.Int4 `json:"temp_meal_id"`
+	TempCookUserID      pgtype.Int4 `json:"temp_cook_user_id"`
+	UserID              pgtype.Int4 `json:"user_id"`
+}
+
+// Upserts a user-scoped day entry, including the four repeating/temp slots.
+// Uses the idx_meal_plan_day_week_user partial index (migration 010).
+func (q *Queries) SetMealPlanDayV2User(ctx context.Context, arg SetMealPlanDayV2UserParams) (MealPlan, error) {
+	row := q.db.QueryRow(ctx, setMealPlanDayV2User,
+		arg.DayName,
+		arg.WeekStart,
+		arg.MealID,
+		arg.CookUserID,
+		arg.RepeatingMealID,
+		arg.RepeatingCookUserID,
+		arg.TempMealID,
+		arg.TempCookUserID,
 		arg.UserID,
 	)
 	var i MealPlan
 	err := row.Scan(
 		&i.ID,
 		&i.DayName,
+		&i.WeekStart,
+		&i.MealName,
+		&i.HouseholdID,
+		&i.UserID,
+		&i.UpdatedAt,
+		&i.MealID,
+		&i.CookUserID,
+		&i.RepeatingCookUserID,
+		&i.TempCookUserID,
+		&i.RepeatingMealID,
+		&i.TempMealID,
+	)
+	return i, err
+}
+
+const upsertMealPlanDayHousehold = `-- name: UpsertMealPlanDayHousehold :one
+INSERT INTO meal_plan (day_name, week_start, meal_name, household_id, user_id, updated_at)
+VALUES ($1, DATE_TRUNC('week', CURRENT_DATE)::DATE, $2, $3, NULL, now())
+ON CONFLICT (day_name, week_start, household_id) WHERE household_id IS NOT NULL
+DO UPDATE SET
+    meal_name  = EXCLUDED.meal_name,
+    updated_at = now()
+RETURNING id, day_name, week_start, meal_name, household_id, user_id, updated_at, meal_id, cook_user_id, repeating_cook_user_id, temp_cook_user_id, repeating_meal_id, temp_meal_id
+`
+
+type UpsertMealPlanDayHouseholdParams struct {
+	DayName     string      `json:"day_name"`
+	MealName    pgtype.Text `json:"meal_name"`
+	HouseholdID pgtype.Int4 `json:"household_id"`
+}
+
+// Simple upsert for household-scoped days (meal_name + effective meal/cook only).
+// Uses the idx_meal_plan_day_week_household partial index (migration 010).
+func (q *Queries) UpsertMealPlanDayHousehold(ctx context.Context, arg UpsertMealPlanDayHouseholdParams) (MealPlan, error) {
+	row := q.db.QueryRow(ctx, upsertMealPlanDayHousehold, arg.DayName, arg.MealName, arg.HouseholdID)
+	var i MealPlan
+	err := row.Scan(
+		&i.ID,
+		&i.DayName,
+		&i.WeekStart,
+		&i.MealName,
+		&i.HouseholdID,
+		&i.UserID,
+		&i.UpdatedAt,
+		&i.MealID,
+		&i.CookUserID,
+		&i.RepeatingCookUserID,
+		&i.TempCookUserID,
+		&i.RepeatingMealID,
+		&i.TempMealID,
+	)
+	return i, err
+}
+
+const upsertMealPlanDayUser = `-- name: UpsertMealPlanDayUser :one
+INSERT INTO meal_plan (day_name, week_start, meal_name, household_id, user_id, updated_at)
+VALUES ($1, DATE_TRUNC('week', CURRENT_DATE)::DATE, $2, NULL, $3, now())
+ON CONFLICT (day_name, week_start, user_id) WHERE user_id IS NOT NULL
+DO UPDATE SET
+    meal_name  = EXCLUDED.meal_name,
+    updated_at = now()
+RETURNING id, day_name, week_start, meal_name, household_id, user_id, updated_at, meal_id, cook_user_id, repeating_cook_user_id, temp_cook_user_id, repeating_meal_id, temp_meal_id
+`
+
+type UpsertMealPlanDayUserParams struct {
+	DayName  string      `json:"day_name"`
+	MealName pgtype.Text `json:"meal_name"`
+	UserID   pgtype.Int4 `json:"user_id"`
+}
+
+// Simple upsert for user-scoped days (meal_name + effective meal/cook only).
+// Uses the idx_meal_plan_day_week_user partial index (migration 010).
+func (q *Queries) UpsertMealPlanDayUser(ctx context.Context, arg UpsertMealPlanDayUserParams) (MealPlan, error) {
+	row := q.db.QueryRow(ctx, upsertMealPlanDayUser, arg.DayName, arg.MealName, arg.UserID)
+	var i MealPlan
+	err := row.Scan(
+		&i.ID,
+		&i.DayName,
+		&i.WeekStart,
 		&i.MealName,
 		&i.HouseholdID,
 		&i.UserID,

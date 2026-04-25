@@ -312,7 +312,7 @@ INSERT INTO meal_plan (day_name, meal_name, household_id, user_id, updated_at)
 VALUES ($1, $2, $3, $4, now())
 ON CONFLICT (day_name, household_id) WHERE household_id IS NOT NULL
 DO UPDATE SET meal_name = EXCLUDED.meal_name, updated_at = now()
-RETURNING id, day_name, meal_name, household_id, user_id, updated_at, meal_id, cook_user_id, repeating_cook_user_id, temp_cook_user_id, repeating_meal_id, temp_meal_id
+RETURNING id, day_name, week_start, meal_name, household_id, user_id, updated_at, meal_id, cook_user_id, repeating_cook_user_id, temp_cook_user_id, repeating_meal_id, temp_meal_id
 `
 
 type UpsertMealPlanDayParams struct {
@@ -333,6 +333,7 @@ func (q *Queries) UpsertMealPlanDay(ctx context.Context, arg UpsertMealPlanDayPa
 	err := row.Scan(
 		&i.ID,
 		&i.DayName,
+		&i.WeekStart,
 		&i.MealName,
 		&i.HouseholdID,
 		&i.UserID,

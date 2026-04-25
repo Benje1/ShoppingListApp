@@ -380,11 +380,17 @@ func upsertMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, inpu
 	if input.MealName != "" {
 		mealName = pgtype.Text{String: input.MealName, Valid: true}
 	}
-	return q.UpsertMealPlanDay(ctx, sqlc.UpsertMealPlanDayParams{
-		DayName:     input.DayName,
-		MealName:    mealName,
-		HouseholdID: hid,
-		UserID:      uid,
+	if hid.Valid {
+		return q.UpsertMealPlanDayHousehold(ctx, sqlc.UpsertMealPlanDayHouseholdParams{
+			DayName:     input.DayName,
+			MealName:    mealName,
+			HouseholdID: hid,
+		})
+	}
+	return q.UpsertMealPlanDayUser(ctx, sqlc.UpsertMealPlanDayUserParams{
+		DayName:  input.DayName,
+		MealName: mealName,
+		UserID:   uid,
 	})
 }
 

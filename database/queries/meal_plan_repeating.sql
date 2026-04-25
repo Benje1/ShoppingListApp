@@ -59,18 +59,18 @@ ORDER BY CASE mp.day_name
     WHEN 'Sunday'    THEN 7
     ELSE 8 END;
 
--- name: SetMealPlanDayV2 :one
--- Upserts a day's entry, including the four repeating/temp slots.
--- Pass 0 for any int field to store NULL.
+-- name: SetMealPlanDayV2Household :one
+-- Upserts a household-scoped day entry, including the four repeating/temp slots.
+-- Uses the idx_meal_plan_day_week_household partial index (migration 010).
 INSERT INTO meal_plan (
-    day_name,
+    day_name, week_start,
     meal_id,          cook_user_id,
     repeating_meal_id, repeating_cook_user_id,
     temp_meal_id,      temp_cook_user_id,
     household_id, user_id, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
-ON CONFLICT (day_name, household_id) WHERE household_id IS NOT NULL
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, now())
+ON CONFLICT (day_name, week_start, household_id) WHERE household_id IS NOT NULL
 DO UPDATE SET
     meal_id                 = EXCLUDED.meal_id,
     cook_user_id            = EXCLUDED.cook_user_id,
@@ -79,6 +79,50 @@ DO UPDATE SET
     temp_meal_id            = EXCLUDED.temp_meal_id,
     temp_cook_user_id       = EXCLUDED.temp_cook_user_id,
     updated_at              = now()
+RETURNING *;
+
+-- name: SetMealPlanDayV2User :one
+-- Upserts a user-scoped day entry, including the four repeating/temp slots.
+-- Uses the idx_meal_plan_day_week_user partial index (migration 010).
+INSERT INTO meal_plan (
+    day_name, week_start,
+    meal_id,          cook_user_id,
+    repeating_meal_id, repeating_cook_user_id,
+    temp_meal_id,      temp_cook_user_id,
+    household_id, user_id, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9, now())
+ON CONFLICT (day_name, week_start, user_id) WHERE user_id IS NOT NULL
+DO UPDATE SET
+    meal_id                 = EXCLUDED.meal_id,
+    cook_user_id            = EXCLUDED.cook_user_id,
+    repeating_meal_id       = EXCLUDED.repeating_meal_id,
+    repeating_cook_user_id  = EXCLUDED.repeating_cook_user_id,
+    temp_meal_id            = EXCLUDED.temp_meal_id,
+    temp_cook_user_id       = EXCLUDED.temp_cook_user_id,
+    updated_at              = now()
+RETURNING *;
+
+-- name: UpsertMealPlanDayHousehold :one
+-- Simple upsert for household-scoped days (meal_name + effective meal/cook only).
+-- Uses the idx_meal_plan_day_week_household partial index (migration 010).
+INSERT INTO meal_plan (day_name, week_start, meal_name, household_id, user_id, updated_at)
+VALUES ($1, DATE_TRUNC('week', CURRENT_DATE)::DATE, $2, $3, NULL, now())
+ON CONFLICT (day_name, week_start, household_id) WHERE household_id IS NOT NULL
+DO UPDATE SET
+    meal_name  = EXCLUDED.meal_name,
+    updated_at = now()
+RETURNING *;
+
+-- name: UpsertMealPlanDayUser :one
+-- Simple upsert for user-scoped days (meal_name + effective meal/cook only).
+-- Uses the idx_meal_plan_day_week_user partial index (migration 010).
+INSERT INTO meal_plan (day_name, week_start, meal_name, household_id, user_id, updated_at)
+VALUES ($1, DATE_TRUNC('week', CURRENT_DATE)::DATE, $2, NULL, $3, now())
+ON CONFLICT (day_name, week_start, user_id) WHERE user_id IS NOT NULL
+DO UPDATE SET
+    meal_name  = EXCLUDED.meal_name,
+    updated_at = now()
 RETURNING *;
 
 -- name: ClearTempOverridesForDay :exec
