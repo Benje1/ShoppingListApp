@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"os"
 
 	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/database"
@@ -78,6 +79,9 @@ func startBackgroundTasks(pool *pgxpool.Pool) {
 func loadEnv() {
 	err := godotenv.Load()
 	if err != nil {
-		panic("Error loading .env file")
+		env := os.Getenv("ENVIRONMENT")
+		if env == "" {
+			panic("Error loading .env file")
+		}
 	}
 }

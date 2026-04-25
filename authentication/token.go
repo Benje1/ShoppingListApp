@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -87,7 +88,7 @@ func CreateSession(w http.ResponseWriter, username string, userID int32, househo
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   getSecureByEnviroment(),
 		SameSite: http.SameSiteStrictMode,
 		Expires:  session.ExpiresAt,
 	})
@@ -202,4 +203,13 @@ func StartSessionCleanup() {
 			sessionMux.Unlock()
 		}
 	}()
+}
+
+func getSecureByEnviroment() bool {
+	env := os.Getenv("ENVIRONMENT")
+	if env == "production" {
+		return true
+	} else {
+		return false
+	}
 }

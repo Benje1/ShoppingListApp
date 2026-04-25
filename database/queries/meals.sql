@@ -1,6 +1,6 @@
 -- name: CreateMeal :one
-INSERT INTO meals (name, description, default_portions)
-VALUES ($1, $2, $3)
+INSERT INTO meals (name, description, default_portions, season)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: GetMeal :one
@@ -15,7 +15,8 @@ ORDER BY name;
 UPDATE meals
 SET name             = $2,
     description      = $3,
-    default_portions = $4
+    default_portions = $4,
+    season           = $5
 WHERE id = $1
 RETURNING *;
 
@@ -46,6 +47,7 @@ SELECT
     m.name            AS meal_name,
     m.description     AS meal_description,
     m.default_portions,
+    m.season,
     mi.shopping_item_id,
     mi.quantity,
     mi.unit,
@@ -91,6 +93,7 @@ SELECT
     m.name            AS meal_name,
     m.default_portions,
     m.description     AS meal_description,
+    m.season          AS meal_season,
     cu.name           AS cook_name,
     cu.username       AS cook_username
 FROM meal_plan mp
@@ -119,7 +122,7 @@ WHERE day_name = $1
 
 -- name: GetMealsForCook :many
 -- Meals that a specific user can cook (they appear in meal_cooks).
-SELECT m.id, m.name, m.description, m.default_portions
+SELECT m.id, m.name, m.description, m.default_portions, m.season
 FROM meals m
 JOIN meal_cooks mc ON mc.meal_id = m.id
 WHERE mc.user_id = $1

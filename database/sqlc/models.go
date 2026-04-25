@@ -11,6 +11,50 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Season string
+
+const (
+	SeasonSpring Season = "spring"
+	SeasonSummer Season = "summer"
+	SeasonAutumn Season = "autumn"
+	SeasonWinter Season = "winter"
+)
+
+func (e *Season) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = Season(s)
+	case string:
+		*e = Season(s)
+	default:
+		return fmt.Errorf("unsupported scan type for Season: %T", src)
+	}
+	return nil
+}
+
+type NullSeason struct {
+	Season Season `json:"season"`
+	Valid  bool   `json:"valid"` // Valid is true if Season is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullSeason) Scan(value interface{}) error {
+	if value == nil {
+		ns.Season, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.Season.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullSeason) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.Season), nil
+}
+
 type ShoppingItemType string
 
 const (
@@ -90,10 +134,11 @@ type HouseholdMember struct {
 }
 
 type Meal struct {
-	ID              int32       `json:"id"`
-	Name            string      `json:"name"`
+	ID              int32      `json:"id"`
+	Name            string     `json:"name"`
 	Description     pgtype.Text `json:"description"`
-	DefaultPortions int32       `json:"default_portions"`
+	DefaultPortions int32      `json:"default_portions"`
+	Season          NullSeason `json:"season"`
 }
 
 type MealComponent struct {

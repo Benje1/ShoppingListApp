@@ -74,25 +74,27 @@ func (q *Queries) ClearMealPlanDay(ctx context.Context, arg ClearMealPlanDayPara
 }
 
 const createMeal = `-- name: CreateMeal :one
-INSERT INTO meals (name, description, default_portions)
-VALUES ($1, $2, $3)
-RETURNING id, name, description, default_portions
+INSERT INTO meals (name, description, default_portions, season)
+VALUES ($1, $2, $3, $4)
+RETURNING id, name, description, default_portions, season
 `
 
 type CreateMealParams struct {
 	Name            string      `json:"name"`
 	Description     pgtype.Text `json:"description"`
 	DefaultPortions int32       `json:"default_portions"`
+	Season          NullSeason  `json:"season"`
 }
 
 func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, error) {
-	row := q.db.QueryRow(ctx, createMeal, arg.Name, arg.Description, arg.DefaultPortions)
+	row := q.db.QueryRow(ctx, createMeal, arg.Name, arg.Description, arg.DefaultPortions, arg.Season)
 	var i Meal
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Description,
 		&i.DefaultPortions,
+		&i.Season,
 	)
 	return i, err
 }
@@ -108,7 +110,7 @@ func (q *Queries) DeleteMeal(ctx context.Context, id int32) error {
 }
 
 const getMeal = `-- name: GetMeal :one
-SELECT id, name, description, default_portions FROM meals
+SELECT id, name, description, default_portions, season FROM meals
 WHERE id = $1
 `
 
@@ -120,6 +122,7 @@ func (q *Queries) GetMeal(ctx context.Context, id int32) (Meal, error) {
 		&i.Name,
 		&i.Description,
 		&i.DefaultPortions,
+		&i.Season,
 	)
 	return i, err
 }
@@ -167,6 +170,7 @@ SELECT
     m.name            AS meal_name,
     m.default_portions,
     m.description     AS meal_description,
+    m.season          AS meal_season,
     cu.name           AS cook_name,
     cu.username       AS cook_username
 FROM meal_plan mp
@@ -193,6 +197,7 @@ type GetMealPlanFullRow struct {
 	MealName        pgtype.Text      `json:"meal_name"`
 	DefaultPortions pgtype.Int4      `json:"default_portions"`
 	MealDescription pgtype.Text      `json:"meal_description"`
+	MealSeason      NullSeason       `json:"meal_season"`
 	CookName        pgtype.Text      `json:"cook_name"`
 	CookUsername    pgtype.Text      `json:"cook_username"`
 }
@@ -216,6 +221,7 @@ func (q *Queries) GetMealPlanFull(ctx context.Context, arg GetMealPlanFullParams
 			&i.MealName,
 			&i.DefaultPortions,
 			&i.MealDescription,
+			&i.MealSeason,
 			&i.CookName,
 			&i.CookUsername,
 		); err != nil {
@@ -235,6 +241,7 @@ SELECT
     m.name            AS meal_name,
     m.description     AS meal_description,
     m.default_portions,
+    m.season,
     mi.shopping_item_id,
     mi.quantity,
     mi.unit,
@@ -253,6 +260,7 @@ type GetMealWithIngredientsRow struct {
 	MealName        string           `json:"meal_name"`
 	MealDescription pgtype.Text      `json:"meal_description"`
 	DefaultPortions int32            `json:"default_portions"`
+	Season          NullSeason       `json:"season"`
 	ShoppingItemID  int32            `json:"shopping_item_id"`
 	Quantity        pgtype.Numeric   `json:"quantity"`
 	Unit            pgtype.Text      `json:"unit"`
@@ -276,6 +284,7 @@ func (q *Queries) GetMealWithIngredients(ctx context.Context, id int32) ([]GetMe
 			&i.MealName,
 			&i.MealDescription,
 			&i.DefaultPortions,
+			&i.Season,
 			&i.ShoppingItemID,
 			&i.Quantity,
 			&i.Unit,
@@ -294,7 +303,7 @@ func (q *Queries) GetMealWithIngredients(ctx context.Context, id int32) ([]GetMe
 }
 
 const getMealsForCook = `-- name: GetMealsForCook :many
-SELECT m.id, m.name, m.description, m.default_portions
+SELECT m.id, m.name, m.description, m.default_portions, m.season
 FROM meals m
 JOIN meal_cooks mc ON mc.meal_id = m.id
 WHERE mc.user_id = $1
@@ -316,6 +325,7 @@ func (q *Queries) GetMealsForCook(ctx context.Context, userID int32) ([]Meal, er
 			&i.Name,
 			&i.Description,
 			&i.DefaultPortions,
+			&i.Season,
 		); err != nil {
 			return nil, err
 		}
@@ -328,7 +338,7 @@ func (q *Queries) GetMealsForCook(ctx context.Context, userID int32) ([]Meal, er
 }
 
 const listMeals = `-- name: ListMeals :many
-SELECT id, name, description, default_portions FROM meals
+SELECT id, name, description, default_portions, season FROM meals
 ORDER BY name
 `
 
@@ -346,6 +356,7 @@ func (q *Queries) ListMeals(ctx context.Context) ([]Meal, error) {
 			&i.Name,
 			&i.Description,
 			&i.DefaultPortions,
+			&i.Season,
 		); err != nil {
 			return nil, err
 		}
@@ -359,7 +370,7 @@ func (q *Queries) ListMeals(ctx context.Context) ([]Meal, error) {
 
 const listMealsWithIngredientCount = `-- name: ListMealsWithIngredientCount :many
 SELECT
-    m.id, m.name, m.description, m.default_portions,
+    m.id, m.name, m.description, m.default_portions, m.season,
     COUNT(mi.shopping_item_id) AS ingredient_count
 FROM meals m
 LEFT JOIN meal_ingredients mi ON mi.meal_id = m.id
@@ -372,6 +383,7 @@ type ListMealsWithIngredientCountRow struct {
 	Name            string      `json:"name"`
 	Description     pgtype.Text `json:"description"`
 	DefaultPortions int32       `json:"default_portions"`
+	Season          NullSeason  `json:"season"`
 	IngredientCount int64       `json:"ingredient_count"`
 }
 
@@ -389,6 +401,7 @@ func (q *Queries) ListMealsWithIngredientCount(ctx context.Context) ([]ListMeals
 			&i.Name,
 			&i.Description,
 			&i.DefaultPortions,
+			&i.Season,
 			&i.IngredientCount,
 		); err != nil {
 			return nil, err
@@ -479,9 +492,10 @@ const updateMeal = `-- name: UpdateMeal :one
 UPDATE meals
 SET name             = $2,
     description      = $3,
-    default_portions = $4
+    default_portions = $4,
+    season           = $5
 WHERE id = $1
-RETURNING id, name, description, default_portions
+RETURNING id, name, description, default_portions, season
 `
 
 type UpdateMealParams struct {
@@ -489,6 +503,7 @@ type UpdateMealParams struct {
 	Name            string      `json:"name"`
 	Description     pgtype.Text `json:"description"`
 	DefaultPortions int32       `json:"default_portions"`
+	Season          NullSeason  `json:"season"`
 }
 
 func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, error) {
@@ -497,6 +512,7 @@ func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, e
 		arg.Name,
 		arg.Description,
 		arg.DefaultPortions,
+		arg.Season,
 	)
 	var i Meal
 	err := row.Scan(
@@ -504,6 +520,7 @@ func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, e
 		&i.Name,
 		&i.Description,
 		&i.DefaultPortions,
+		&i.Season,
 	)
 	return i, err
 }
