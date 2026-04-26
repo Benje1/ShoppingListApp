@@ -83,13 +83,24 @@ func CreateSession(w http.ResponseWriter, username string, userID int32, househo
 	sessions[sessionID] = session
 	sessionMux.Unlock()
 
+	// In production (ENVIRONMENT=production) the API is served over HTTPS
+	// and the frontend is on a different origin, so we need:
+	//   Secure:   true  — cookie only sent over HTTPS
+	//   SameSite: None  — cookie sent on cross-origin requests
+	// Locally both sides are http://localhost so Lax + Secure=false is fine.
+	secure := os.Getenv("ENVIRONMENT") == "production"
+	sameSite := http.SameSiteLaxMode
+	if secure {
+		sameSite = http.SameSiteNoneMode
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_id",
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   getSecureByEnviroment(),
-		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
+		SameSite: sameSite,
 		Expires:  session.ExpiresAt,
 	})
 }
@@ -203,13 +214,4 @@ func StartSessionCleanup() {
 			sessionMux.Unlock()
 		}
 	}()
-}
-
-func getSecureByEnviroment() bool {
-	env := os.Getenv("ENVIRONMENT")
-	if env == "production" {
-		return true
-	} else {
-		return false
-	}
 }
