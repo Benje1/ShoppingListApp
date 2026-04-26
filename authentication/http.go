@@ -51,14 +51,15 @@ type LoginRequest struct {
 }
 
 // LoginResponse is what the frontend receives on successful login.
-// Households is the full list of households the user belongs to, each with
-// their ID and display name, so the frontend can populate the selector
-// without any extra API calls.
+// SessionToken is the raw session ID — the frontend should store this and
+// send it as "Authorization: Bearer <token>" on every subsequent request.
+// Households is the full list of households the user belongs to.
 type LoginResponse struct {
-	ID         int32                    `json:"id"`
-	Name       string                   `json:"name"`
-	Username   string                   `json:"username"`
-	Households []database.UserHousehold `json:"households"`
+	ID           int32                    `json:"id"`
+	Name         string                   `json:"name"`
+	Username     string                   `json:"username"`
+	Households   []database.UserHousehold `json:"households"`
+	SessionToken string                   `json:"session_token"`
 }
 
 func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, LoginRequest) (any, error) {
@@ -68,17 +69,17 @@ func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, L
 		if err != nil {
 			return nil, err
 		}
-		// Extract household IDs to store in the session
 		householdIds := make([]int32, len(user.Households))
 		for i, h := range user.Households {
 			householdIds[i] = h.HouseholdID
 		}
-		CreateSession(w, user.Username, user.ID, householdIds)
+		token := CreateSession(w, user.Username, user.ID, householdIds)
 		return LoginResponse{
-			ID:         user.ID,
-			Name:       user.Name,
-			Username:   user.Username,
-			Households: user.Households,
+			ID:           user.ID,
+			Name:         user.Name,
+			Username:     user.Username,
+			Households:   user.Households,
+			SessionToken: token,
 		}, nil
 	}
 }
