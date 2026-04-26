@@ -56,6 +56,9 @@ func main() {
 		panic(err)
 	}
 
+	// Wire the database pool into the session store before serving any traffic.
+	authentication.InitSessionStore(pool)
+
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux, pool)
 

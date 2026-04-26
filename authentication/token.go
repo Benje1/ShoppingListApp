@@ -8,13 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"sync"
 	"time"
-)
 
-var (
-	sessions   = make(map[string]Session)
-	sessionMux sync.Mutex
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // contextKey is an unexported type for context keys in this package.
@@ -22,9 +18,17 @@ type contextKey string
 
 const sessionContextKey contextKey = "session"
 
+// db is the pool used for session persistence.
+// Initialised by InitSessionStore before any HTTP traffic is served.
+var db *pgxpool.Pool
+
+// InitSessionStore wires up the database pool used by all session functions.
+// Call this once from main, before starting the HTTP server.
+func InitSessionStore(pool *pgxpool.Pool) {
+	db = pool
+}
+
 // Session holds everything known about the authenticated user.
-// HouseholdIds is populated at login from the database and refreshed on
-// every request via RequireAuth, so it can never be spoofed via URL params.
 type Session struct {
 	Username     string
 	UserID       int32
@@ -32,9 +36,7 @@ type Session struct {
 	ExpiresAt    time.Time
 }
 
-// FirstHouseholdID returns the user's primary household ID, or 0 if they
-// have none. This is the safe, server-authoritative replacement for reading
-// household_id from a URL query parameter.
+// FirstHouseholdID returns the user's primary household ID, or 0 if they have none.
 func (s Session) FirstHouseholdID() int32 {
 	if len(s.HouseholdIds) == 0 {
 		return 0
@@ -50,7 +52,6 @@ func (s Session) GetAllHouseholdsID() []int32 {
 }
 
 // HasHousehold reports whether the given household ID is in the user's session.
-// Use this to authorise access before acting on a household resource.
 func (s Session) HasHousehold(id int32) bool {
 	for _, hid := range s.HouseholdIds {
 		if hid == id {
@@ -66,28 +67,28 @@ func newSessionID() string {
 	return hex.EncodeToString(b)
 }
 
-// CreateSession stores a new session and sets the cookie.
-// householdIds should be the complete list of households the user belongs to
-// at login time.
+// CreateSession persists a new session to Postgres and sets the cookie.
 func CreateSession(w http.ResponseWriter, username string, userID int32, householdIds []int32) {
 	sessionID := newSessionID()
+	expiresAt := time.Now().Add(7 * 24 * time.Hour) // 7 days
 
-	session := Session{
-		Username:     username,
-		UserID:       userID,
-		HouseholdIds: householdIds,
-		ExpiresAt:    time.Now().Add(30 * time.Minute),
+	// Convert []int32 to []int64 for pgx
+	hids := make([]int64, len(householdIds))
+	for i, h := range householdIds {
+		hids[i] = int64(h)
 	}
 
-	sessionMux.Lock()
-	sessions[sessionID] = session
-	sessionMux.Unlock()
+	_, err := db.Exec(context.Background(),
+		`INSERT INTO sessions (id, user_id, username, household_ids, expires_at)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		sessionID, userID, username, hids, expiresAt,
+	)
+	if err != nil {
+		fmt.Printf("session insert error: %v\n", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 
-	// In production (ENVIRONMENT=production) the API is served over HTTPS
-	// and the frontend is on a different origin, so we need:
-	//   Secure:   true  — cookie only sent over HTTPS
-	//   SameSite: None  — cookie sent on cross-origin requests
-	// Locally both sides are http://localhost so Lax + Secure=false is fine.
 	secure := os.Getenv("ENVIRONMENT") == "production"
 	sameSite := http.SameSiteLaxMode
 	if secure {
@@ -101,16 +102,17 @@ func CreateSession(w http.ResponseWriter, username string, userID int32, househo
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: sameSite,
-		Expires:  session.ExpiresAt,
+		Expires:  expiresAt,
 	})
 }
 
+// DestroySession deletes the session from Postgres and clears the cookie.
 func DestroySession(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session_id")
 	if err == nil {
-		sessionMux.Lock()
-		delete(sessions, cookie.Value)
-		sessionMux.Unlock()
+		db.Exec(context.Background(),
+			`DELETE FROM sessions WHERE id = $1`, cookie.Value,
+		)
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -121,27 +123,46 @@ func DestroySession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// getSession reads the session from the cookie store.
+// getSession loads and validates a session from Postgres.
 func getSession(r *http.Request) (Session, bool) {
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
 		return Session{}, false
 	}
 
-	sessionMux.Lock()
-	defer sessionMux.Unlock()
+	var (
+		username  string
+		userID    int32
+		hids      []int64
+		expiresAt time.Time
+	)
 
-	session, ok := sessions[cookie.Value]
-	if !ok {
+	err = db.QueryRow(context.Background(),
+		`SELECT username, user_id, household_ids, expires_at
+		 FROM sessions WHERE id = $1`,
+		cookie.Value,
+	).Scan(&username, &userID, &hids, &expiresAt)
+
+	if err != nil {
 		return Session{}, false
 	}
 
-	if time.Now().After(session.ExpiresAt) {
-		delete(sessions, cookie.Value)
+	if time.Now().After(expiresAt) {
+		db.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, cookie.Value)
 		return Session{}, false
 	}
 
-	return session, true
+	householdIds := make([]int32, len(hids))
+	for i, h := range hids {
+		householdIds[i] = int32(h)
+	}
+
+	return Session{
+		Username:     username,
+		UserID:       userID,
+		HouseholdIds: householdIds,
+		ExpiresAt:    expiresAt,
+	}, true
 }
 
 // GetUser returns the username from the session cookie (kept for compatibility).
@@ -151,7 +172,6 @@ func GetUser(r *http.Request) (string, bool) {
 }
 
 // GetUserID returns just the numeric user ID from the session cookie.
-// Prefer GetSessionFromContext when you also need household information.
 func GetUserID(r *http.Request) (int32, error) {
 	s, ok := getSession(r)
 	if !ok {
@@ -163,9 +183,7 @@ func GetUserID(r *http.Request) (int32, error) {
 	return s.UserID, nil
 }
 
-// SessionFromContext retrieves the Session that RequireAuth injected into
-// the request context. This is the preferred way for handlers to access
-// user and household information — it never touches URL parameters.
+// SessionFromContext retrieves the Session that RequireAuth injected into the request context.
 func SessionFromContext(r *http.Request) (Session, error) {
 	s, ok := r.Context().Value(sessionContextKey).(Session)
 	if !ok || s.UserID == 0 {
@@ -179,8 +197,7 @@ func WithSession(ctx context.Context, s Session) context.Context {
 	return context.WithValue(ctx, sessionContextKey, s)
 }
 
-// RequireAuth rejects unauthenticated requests and injects the full Session
-// into the request context so handlers never need to re-read the cookie.
+// RequireAuth rejects unauthenticated requests and injects the full Session into the request context.
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session, ok := getSession(r)
@@ -189,29 +206,22 @@ func RequireAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// Inject session into context — handlers read from here, not URL params
 		ctx := WithSession(r.Context(), session)
 		r = r.WithContext(ctx)
-
-		// Keep X-User header for any code that still reads it
 		r.Header.Set("X-User", session.Username)
 
 		next.ServeHTTP(w, r)
 	})
 }
 
+// StartSessionCleanup periodically deletes expired sessions from Postgres.
 func StartSessionCleanup() {
 	go func() {
 		for {
-			time.Sleep(1 * time.Minute)
-
-			sessionMux.Lock()
-			for id, session := range sessions {
-				if time.Now().After(session.ExpiresAt) {
-					delete(sessions, id)
-				}
-			}
-			sessionMux.Unlock()
+			time.Sleep(10 * time.Minute)
+			db.Exec(context.Background(),
+				`DELETE FROM sessions WHERE expires_at < now()`,
+			)
 		}
 	}()
 }
