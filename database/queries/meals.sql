@@ -121,9 +121,14 @@ WHERE day_name = $1
   AND (household_id = $2 OR user_id = $3);
 
 -- name: GetMealsForCook :many
--- Meals that a specific user can cook (they appear in meal_cooks).
+-- Meals that a specific user can cook (assigned via meal_cooks),
+-- plus any meals that have no cooks assigned at all (available to everyone).
 SELECT m.id, m.name, m.description, m.default_portions, m.season
 FROM meals m
-JOIN meal_cooks mc ON mc.meal_id = m.id
-WHERE mc.user_id = $1
+WHERE
+    -- assigned to this user
+    EXISTS (SELECT 1 FROM meal_cooks mc WHERE mc.meal_id = m.id AND mc.user_id = $1)
+    OR
+    -- no cook assigned (universally available)
+    NOT EXISTS (SELECT 1 FROM meal_cooks mc WHERE mc.meal_id = m.id)
 ORDER BY m.name;

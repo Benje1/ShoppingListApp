@@ -107,6 +107,7 @@ func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 	})
 
 	registerPlanAndCookRoutes(r, db)
+	RegisterRepeatingPlanRoutes(r, db)
 
 	// POST /meals/component/add?id=<parent_meal_id>
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[AddComponentInput]{
@@ -153,10 +154,10 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 		Path: "/plan", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-					sess, err := authentication.SessionFromContext(r)
-					if err != nil {
-						return nil, err
-					}
+				sess, err := authentication.SessionFromContext(r)
+				if err != nil {
+					return nil, err
+				}
 				return getMealPlanFull(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
 			}
 		},
@@ -167,10 +168,10 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 		Path: "/plan/set", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, SetMealPlanInput) (any, error) {
 			return func(r *http.Request, input SetMealPlanInput) (any, error) {
-					sess, err := authentication.SessionFromContext(r)
-					if err != nil {
-						return nil, err
-					}
+				sess, err := authentication.SessionFromContext(r)
+				if err != nil {
+					return nil, err
+				}
 				return setMealPlanDay(r.Context(), db, sess.UserID, input)
 			}
 		},
@@ -181,10 +182,10 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 		Path: "/plan/clear", Method: "POST", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, ClearMealPlanInput) (any, error) {
 			return func(r *http.Request, input ClearMealPlanInput) (any, error) {
-					sess, err := authentication.SessionFromContext(r)
-					if err != nil {
-						return nil, err
-					}
+				sess, err := authentication.SessionFromContext(r)
+				if err != nil {
+					return nil, err
+				}
 				if err := clearMealPlanDay(r.Context(), db, sess.UserID, input); err != nil {
 					return nil, err
 				}
@@ -235,16 +236,21 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 		},
 	})
 
-	// GET /meals/for-cook?user_id= — meals a specific user can cook
+	// GET /meals/for-cook?user_id= — meals a specific user can cook, plus meals with no cooks assigned
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "/for-cook", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				sess, err := authentication.SessionFromContext(r)
-				if err != nil {
-					return nil, err
+				var userID int32
+				fmt.Sscanf(r.URL.Query().Get("user_id"), "%d", &userID)
+				if userID == 0 {
+					sess, err := authentication.SessionFromContext(r)
+					if err != nil {
+						return nil, err
+					}
+					userID = sess.UserID
 				}
-				return getMealsForCook(r.Context(), db, sess.UserID)
+				return getMealsForCook(r.Context(), db, userID)
 			}
 		},
 	})

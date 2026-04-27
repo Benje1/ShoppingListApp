@@ -310,12 +310,17 @@ func (q *Queries) GetMealWithIngredients(ctx context.Context, id int32) ([]GetMe
 const getMealsForCook = `-- name: GetMealsForCook :many
 SELECT m.id, m.name, m.description, m.default_portions, m.season
 FROM meals m
-JOIN meal_cooks mc ON mc.meal_id = m.id
-WHERE mc.user_id = $1
+WHERE
+    -- assigned to this user
+    EXISTS (SELECT 1 FROM meal_cooks mc WHERE mc.meal_id = m.id AND mc.user_id = $1)
+    OR
+    -- no cook assigned (universally available)
+    NOT EXISTS (SELECT 1 FROM meal_cooks mc WHERE mc.meal_id = m.id)
 ORDER BY m.name
 `
 
-// Meals that a specific user can cook (they appear in meal_cooks).
+// Meals that a specific user can cook (assigned via meal_cooks),
+// plus any meals that have no cooks assigned at all (available to everyone).
 func (q *Queries) GetMealsForCook(ctx context.Context, userID int32) ([]Meal, error) {
 	rows, err := q.db.Query(ctx, getMealsForCook, userID)
 	if err != nil {
