@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: shopping
+      POSTGRES_PASSWORD: shopping
+      POSTGRES_DB: shopping_test
+    ports:
+      - "5432:5432"
+    # No named volume — data is intentionally ephemeral.
+    # The container (and all its data) is removed with `docker compose down`.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopping -d shopping_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
