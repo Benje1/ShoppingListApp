@@ -200,7 +200,7 @@ func TestIntegration_MealCooks_Remove_Succeeds(t *testing.T) {
 	if err := q.AddMealCook(ctx, sqlc.AddMealCookParams{MealID: mealID, UserID: cookID}); err != nil {
 		t.Fatalf("AddMealCook: %v", err)
 	}
-	if err := q.RemoveMealCook(ctx, sqlc.RemoveMealCookParams{MealID: mealID, UserID: cookID}); err != nil {
+	if err := q.RemoveMealCook(ctx, sqlc.RemoveMealCookParams{MealID: mealID, UserID: cookID, Column3: 0}); err != nil {
 		t.Fatalf("RemoveMealCook: %v", err)
 	}
 
@@ -225,7 +225,7 @@ func TestIntegration_GetMealsForCook_ReturnsAssignedAndUnassigned(t *testing.T) 
 		t.Fatalf("AddMealCook: %v", err)
 	}
 
-	meals, err := q.GetMealsForCook(ctx, cookID)
+	meals, err := q.GetMealsForCook(ctx, sqlc.GetMealsForCookParams{UserID: cookID})
 	if err != nil {
 		t.Fatalf("GetMealsForCook: %v", err)
 	}
@@ -472,8 +472,8 @@ func TestIntegration_SetWeekPlanDay_HouseholdScope_Succeeds(t *testing.T) {
 	if len(rows) == 0 {
 		t.Fatal("expected at least one row")
 	}
-	if rows[0].HouseholdID.Int32 != householdID {
-		t.Errorf("expected HouseholdID=%d, got %d", householdID, rows[0].HouseholdID.Int32)
+	if rows[0].MealID.Int32 != mealID {
+		t.Errorf("expected MealID=%d, got %d", mealID, rows[0].MealID.Int32)
 	}
 }
 

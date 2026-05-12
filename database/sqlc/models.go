@@ -139,8 +139,7 @@ type Meal struct {
 	Description     pgtype.Text `json:"description"`
 	DefaultPortions int32       `json:"default_portions"`
 	Season          NullSeason  `json:"season"`
-	// NULL = global/shared meal; non-NULL = only for this household
-	HouseholdID pgtype.Int4 `json:"household_id"`
+	HouseholdID     pgtype.Int4 `json:"household_id"`
 }
 
 type MealComponent struct {
@@ -153,7 +152,6 @@ type MealCook struct {
 	ID          int32       `json:"id"`
 	MealID      int32       `json:"meal_id"`
 	UserID      int32       `json:"user_id"`
-	// NULL = applies across all households; non-NULL = scoped to this household
 	HouseholdID pgtype.Int4 `json:"household_id"`
 }
 

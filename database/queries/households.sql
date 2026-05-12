@@ -49,7 +49,7 @@ ORDER BY hi.created_at;
 -- name: RespondToInvite :one
 UPDATE household_invites
 SET status = $2
-WHERE id = $1
+WHERE id = $1 AND status = 'pending'
 RETURNING *;
 
 -- name: GetInviteByID :one

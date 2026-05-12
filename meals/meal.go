@@ -29,16 +29,16 @@ type ParentRef struct {
 }
 
 type MealResponse struct {
-	ID              int32                `json:"id"`
-	Name            string               `json:"name"`
-	Description     string               `json:"description"`
-	DefaultPortions int32                `json:"default_portions"`
+	ID              int32  `json:"id"`
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	DefaultPortions int32  `json:"default_portions"`
 	// HouseholdID is nil for global/shared meals.
-	HouseholdID     *int32               `json:"household_id"`
-	Ingredients     []IngredientResponse `json:"ingredients"`
-	Cooks           []CookResponse       `json:"cooks"`
-	Components      []ComponentResponse  `json:"components"`   // sub-meals
-	PartOf          []ParentRef          `json:"part_of"`      // composite meals that include this
+	HouseholdID *int32               `json:"household_id"`
+	Ingredients []IngredientResponse `json:"ingredients"`
+	Cooks       []CookResponse       `json:"cooks"`
+	Components  []ComponentResponse  `json:"components"` // sub-meals
+	PartOf      []ParentRef          `json:"part_of"`    // composite meals that include this
 }
 
 type MealSummary struct {
@@ -48,7 +48,7 @@ type MealSummary struct {
 	DefaultPortions int32  `json:"default_portions"`
 	IngredientCount int64  `json:"ingredient_count"`
 	// HouseholdID is nil for global/shared meals.
-	HouseholdID     *int32 `json:"household_id"`
+	HouseholdID *int32 `json:"household_id"`
 }
 
 // ── Input types ───────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ type CreateMealInput struct {
 	DefaultPortions int32             `json:"default_portions"`
 	Ingredients     []IngredientInput `json:"ingredients"`
 	// HouseholdID makes this meal household-specific. Omit (or set 0) for a global meal.
-	HouseholdID     int32             `json:"household_id"`
+	HouseholdID int32 `json:"household_id"`
 }
 
 type IngredientInput struct {
@@ -73,7 +73,7 @@ type UpdateMealInput struct {
 	Description     string `json:"description"`
 	DefaultPortions int32  `json:"default_portions"`
 	// HouseholdID makes this meal household-specific. Set 0 to make it global again.
-	HouseholdID     int32  `json:"household_id"`
+	HouseholdID int32 `json:"household_id"`
 }
 
 type AddIngredientInput struct {
@@ -283,9 +283,9 @@ func removeIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input
 // ── Cook management ───────────────────────────────────────────────────────────
 
 type CookResponse struct {
-	ID            int32  `json:"id"`
-	Name          string `json:"name"`
-	Username      string `json:"username"`
+	ID       int32  `json:"id"`
+	Name     string `json:"name"`
+	Username string `json:"username"`
 	// HouseholdID is nil when the assignment applies across all households.
 	HouseholdID   *int32 `json:"household_id"`
 	HouseholdName string `json:"household_name"`
@@ -327,9 +327,9 @@ func addMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32, ho
 func removeMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32, householdID pgtype.Int4) ([]CookResponse, error) {
 	q := sqlc.New(db)
 	if err := q.RemoveMealCook(ctx, sqlc.RemoveMealCookParams{
-		MealID:      mealID,
-		UserID:      userID,
-		HouseholdID: householdID,
+		MealID:  mealID,
+		UserID:  userID,
+		Column3: householdID.Int32,
 	}); err != nil {
 		return nil, err
 	}
@@ -370,7 +370,7 @@ type MealPlanDayResponse struct {
 type SetMealPlanInput struct {
 	DayName     string `json:"day_name"`
 	MealID      int32  `json:"meal_id"`
-	CookUserID  int32  `json:"cook_user_id"`  // 0 = no cook assigned
+	CookUserID  int32  `json:"cook_user_id"` // 0 = no cook assigned
 	Scope       string `json:"scope"`
 	HouseholdID int32  `json:"household_id"`
 }

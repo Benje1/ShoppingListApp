@@ -23,6 +23,8 @@ type AddMealCookParams struct {
 	HouseholdID pgtype.Int4 `json:"household_id"`
 }
 
+// Assign a cook to a meal, optionally scoped to a specific household.
+// Pass NULL for household_id to create a cross-household assignment.
 func (q *Queries) AddMealCook(ctx context.Context, arg AddMealCookParams) error {
 	_, err := q.db.Exec(ctx, addMealCook, arg.MealID, arg.UserID, arg.HouseholdID)
 	return err
@@ -160,6 +162,7 @@ type GetMealCooksRow struct {
 	HouseholdName pgtype.Text `json:"household_name"`
 }
 
+// Returns all cook assignments for a meal, with their household scope.
 func (q *Queries) GetMealCooks(ctx context.Context, mealID int32) ([]GetMealCooksRow, error) {
 	rows, err := q.db.Query(ctx, getMealCooks, mealID)
 	if err != nil {
@@ -169,7 +172,13 @@ func (q *Queries) GetMealCooks(ctx context.Context, mealID int32) ([]GetMealCook
 	var items []GetMealCooksRow
 	for rows.Next() {
 		var i GetMealCooksRow
-		if err := rows.Scan(&i.ID, &i.Name, &i.Username, &i.HouseholdID, &i.HouseholdName); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Username,
+			&i.HouseholdID,
+			&i.HouseholdName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -326,19 +335,27 @@ const getMealsForCook = `-- name: GetMealsForCook :many
 SELECT m.id, m.name, m.description, m.default_portions, m.season, m.household_id
 FROM meals m
 WHERE
+    -- Respect household-specific meals: only show them to the right household
     (m.household_id IS NULL OR m.household_id = $2)
     AND
     (
+        -- Assigned to this user for this specific household
         EXISTS (
             SELECT 1 FROM meal_cooks mc
-            WHERE mc.meal_id = m.id AND mc.user_id = $1 AND mc.household_id = $2
+            WHERE mc.meal_id = m.id
+              AND mc.user_id = $1
+              AND mc.household_id = $2
         )
         OR
+        -- Assigned to this user with no household restriction
         EXISTS (
             SELECT 1 FROM meal_cooks mc
-            WHERE mc.meal_id = m.id AND mc.user_id = $1 AND mc.household_id IS NULL
+            WHERE mc.meal_id = m.id
+              AND mc.user_id = $1
+              AND mc.household_id IS NULL
         )
         OR
+        -- No cook assigned at all (available to everyone)
         NOT EXISTS (SELECT 1 FROM meal_cooks mc WHERE mc.meal_id = m.id)
     )
 ORDER BY m.name
@@ -349,7 +366,13 @@ type GetMealsForCookParams struct {
 	HouseholdID pgtype.Int4 `json:"household_id"`
 }
 
-// Meals that a specific user can cook within a given household context.
+// Meals that a specific user can cook within a given household context:
+//  1. Meal is assigned to this user with this exact household_id, OR
+//  2. Meal is assigned to this user with no household restriction (NULL), OR
+//  3. Meal has no cook assignments at all (universally available).
+//
+// Additionally, household-specific meals are filtered: if a meal has a
+// household_id set, it is only returned when the caller's household matches.
 func (q *Queries) GetMealsForCook(ctx context.Context, arg GetMealsForCookParams) ([]Meal, error) {
 	rows, err := q.db.Query(ctx, getMealsForCook, arg.UserID, arg.HouseholdID)
 	if err != nil {
@@ -384,8 +407,8 @@ WHERE household_id IS NULL
 ORDER BY name
 `
 
-// ListMeals returns global meals plus meals belonging to the given household.
-// Pass pgtype.Int4{Valid: false} to return only global meals.
+// Lists all global meals plus meals belonging to the given household.
+// Pass NULL for household_id to get only global meals.
 func (q *Queries) ListMeals(ctx context.Context, householdID pgtype.Int4) ([]Meal, error) {
 	rows, err := q.db.Query(ctx, listMeals, householdID)
 	if err != nil {
@@ -435,6 +458,7 @@ type ListMealsWithIngredientCountRow struct {
 	IngredientCount int64       `json:"ingredient_count"`
 }
 
+// Lists all global meals plus meals belonging to the given household.
 func (q *Queries) ListMealsWithIngredientCount(ctx context.Context, householdID pgtype.Int4) ([]ListMealsWithIngredientCountRow, error) {
 	rows, err := q.db.Query(ctx, listMealsWithIngredientCount, householdID)
 	if err != nil {
@@ -473,13 +497,15 @@ WHERE meal_id = $1 AND user_id = $2
 `
 
 type RemoveMealCookParams struct {
-	MealID      int32       `json:"meal_id"`
-	UserID      int32       `json:"user_id"`
-	HouseholdID pgtype.Int4 `json:"household_id"`
+	MealID  int32 `json:"meal_id"`
+	UserID  int32 `json:"user_id"`
+	Column3 int32 `json:"column_3"`
 }
 
+// Remove a cook assignment. household_id must match exactly (NULL removes the
+// cross-household assignment; a specific ID removes that household's assignment).
 func (q *Queries) RemoveMealCook(ctx context.Context, arg RemoveMealCookParams) error {
-	_, err := q.db.Exec(ctx, removeMealCook, arg.MealID, arg.UserID, arg.HouseholdID)
+	_, err := q.db.Exec(ctx, removeMealCook, arg.MealID, arg.UserID, arg.Column3)
 	return err
 }
 

@@ -160,7 +160,7 @@ func TestIntegration_ShoppingList_HouseholdScope_Isolated(t *testing.T) {
 	hid2 := makeHousehold(t, owner2)
 
 	h1, _ := householdScope(hid1)
-	h2, _ := householdScope(hid2)
+	_, _ = householdScope(hid2) // hid2 used directly in raw SQL query below
 
 	if _, err := q.AddToShoppingList(ctx, sqlc.AddToShoppingListParams{
 		ShoppingItemID: SeedItems.Cheese,

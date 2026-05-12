@@ -219,7 +219,7 @@ func (q *Queries) RenameHousehold(ctx context.Context, arg RenameHouseholdParams
 const respondToInvite = `-- name: RespondToInvite :one
 UPDATE household_invites
 SET status = $2
-WHERE id = $1
+WHERE id = $1 AND status = 'pending'
 RETURNING id, household_id, invite_code, requested_by_user_id, status, created_at
 `
 

@@ -120,7 +120,7 @@ func TestIntegration_InviteFlow_ApproveJoin(t *testing.T) {
 	}
 
 	// Joiner requests to join via the code.
-	found, err := hrepo.GetInviteByCode(ctx, invite.Code)
+	found, err := hrepo.GetInviteByCode(ctx, invite.InviteCode)
 	if err != nil {
 		t.Fatalf("GetInviteByCode: %v", err)
 	}

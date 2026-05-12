@@ -192,11 +192,7 @@ func requestJoin(ctx context.Context, db *pgxpool.Pool, userID int32, input Requ
 	}
 
 	// Create a new invite request from this user for that household
-	code, err := generateCode()
-	if err != nil {
-		return nil, err
-	}
-	inv, err := repo(db).CreateInvite(ctx, existing.HouseholdID, code, userID)
+	inv, err := repo(db).CreateInvite(ctx, existing.HouseholdID, input.InviteCode, userID)
 	if err != nil {
 		return nil, err
 	}
