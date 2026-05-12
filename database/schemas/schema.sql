@@ -93,8 +93,12 @@ CREATE TABLE meals (
     name             TEXT NOT NULL,
     description      TEXT,
     default_portions INT NOT NULL DEFAULT 2,
-    season           season NULL
+    season           season NULL,
+    -- NULL = global/shared meal; non-NULL = only visible within this household
+    household_id     INT REFERENCES households(household_id) ON DELETE CASCADE
 );
+
+CREATE INDEX idx_meals_household ON meals (household_id) WHERE household_id IS NOT NULL;
 
 CREATE TABLE meal_ingredients (
     meal_id          INT REFERENCES meals(id) ON DELETE CASCADE,
@@ -105,10 +109,20 @@ CREATE TABLE meal_ingredients (
 );
 
 CREATE TABLE meal_cooks (
-    meal_id INT NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
-    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    PRIMARY KEY (meal_id, user_id)
+    id           SERIAL PRIMARY KEY,
+    meal_id      INT NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
+    user_id      INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- NULL = assignment applies across all households the cook belongs to
+    -- non-NULL = assignment scoped to this specific household only
+    household_id INT REFERENCES households(household_id) ON DELETE CASCADE
 );
+
+-- Two partial unique indexes because NULL != NULL in standard SQL
+CREATE UNIQUE INDEX idx_meal_cooks_meal_user_household
+    ON meal_cooks (meal_id, user_id, household_id) WHERE household_id IS NOT NULL;
+
+CREATE UNIQUE INDEX idx_meal_cooks_meal_user_no_household
+    ON meal_cooks (meal_id, user_id) WHERE household_id IS NULL;
 
 CREATE TABLE meal_components (
     parent_meal_id INT NOT NULL REFERENCES meals(id) ON DELETE CASCADE,

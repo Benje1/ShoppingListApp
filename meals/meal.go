@@ -33,6 +33,8 @@ type MealResponse struct {
 	Name            string               `json:"name"`
 	Description     string               `json:"description"`
 	DefaultPortions int32                `json:"default_portions"`
+	// HouseholdID is nil for global/shared meals.
+	HouseholdID     *int32               `json:"household_id"`
 	Ingredients     []IngredientResponse `json:"ingredients"`
 	Cooks           []CookResponse       `json:"cooks"`
 	Components      []ComponentResponse  `json:"components"`   // sub-meals
@@ -45,15 +47,19 @@ type MealSummary struct {
 	Description     string `json:"description"`
 	DefaultPortions int32  `json:"default_portions"`
 	IngredientCount int64  `json:"ingredient_count"`
+	// HouseholdID is nil for global/shared meals.
+	HouseholdID     *int32 `json:"household_id"`
 }
 
 // ── Input types ───────────────────────────────────────────────────────────────
 
 type CreateMealInput struct {
-	Name            string             `json:"name"`
-	Description     string             `json:"description"`
-	DefaultPortions int32              `json:"default_portions"`
-	Ingredients     []IngredientInput  `json:"ingredients"`
+	Name            string            `json:"name"`
+	Description     string            `json:"description"`
+	DefaultPortions int32             `json:"default_portions"`
+	Ingredients     []IngredientInput `json:"ingredients"`
+	// HouseholdID makes this meal household-specific. Omit (or set 0) for a global meal.
+	HouseholdID     int32             `json:"household_id"`
 }
 
 type IngredientInput struct {
@@ -66,6 +72,8 @@ type UpdateMealInput struct {
 	Name            string `json:"name"`
 	Description     string `json:"description"`
 	DefaultPortions int32  `json:"default_portions"`
+	// HouseholdID makes this meal household-specific. Set 0 to make it global again.
+	HouseholdID     int32  `json:"household_id"`
 }
 
 type AddIngredientInput struct {
@@ -121,7 +129,7 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 			PortionsPerUnit: r.PortionsPerUnit,
 		})
 	}
-	return MealResponse{
+	resp := MealResponse{
 		ID:              meal.ID,
 		Name:            meal.Name,
 		Description:     desc,
@@ -131,13 +139,18 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 		Components:      []ComponentResponse{},
 		PartOf:          []ParentRef{},
 	}
+	if meal.HouseholdID.Valid {
+		hid := meal.HouseholdID.Int32
+		resp.HouseholdID = &hid
+	}
+	return resp
 }
 
 // ── Business logic ────────────────────────────────────────────────────────────
 
-func listMeals(ctx context.Context, db *pgxpool.Pool) ([]MealSummary, error) {
+func listMeals(ctx context.Context, db *pgxpool.Pool, householdID pgtype.Int4) ([]MealSummary, error) {
 	q := sqlc.New(db)
-	rows, err := q.ListMealsWithIngredientCount(ctx)
+	rows, err := q.ListMealsWithIngredientCount(ctx, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -147,13 +160,18 @@ func listMeals(ctx context.Context, db *pgxpool.Pool) ([]MealSummary, error) {
 		if r.Description.Valid {
 			desc = r.Description.String
 		}
-		out[i] = MealSummary{
+		s := MealSummary{
 			ID:              r.ID,
 			Name:            r.Name,
 			Description:     desc,
 			DefaultPortions: r.DefaultPortions,
 			IngredientCount: r.IngredientCount,
 		}
+		if r.HouseholdID.Valid {
+			hid := r.HouseholdID.Int32
+			s.HouseholdID = &hid
+		}
+		out[i] = s
 	}
 	return out, nil
 }
@@ -175,7 +193,15 @@ func getMeal(ctx context.Context, db *pgxpool.Pool, id int32) (*MealResponse, er
 	r := buildMealResponse(meal, rows)
 	r.Cooks = make([]CookResponse, len(cookRows))
 	for i, c := range cookRows {
-		r.Cooks[i] = CookResponse{ID: c.ID, Name: c.Name, Username: c.Username}
+		cr := CookResponse{ID: c.ID, Name: c.Name, Username: c.Username}
+		if c.HouseholdID.Valid {
+			hid := c.HouseholdID.Int32
+			cr.HouseholdID = &hid
+		}
+		if c.HouseholdName.Valid {
+			cr.HouseholdName = c.HouseholdName.String
+		}
+		r.Cooks[i] = cr
 	}
 	return &r, nil
 }
@@ -189,6 +215,7 @@ func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*
 		Name:            input.Name,
 		Description:     toText(input.Description),
 		DefaultPortions: input.DefaultPortions,
+		HouseholdID:     nullableInt4(input.HouseholdID),
 	})
 	if err != nil {
 		return nil, err
@@ -204,7 +231,7 @@ func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*
 			return nil, fmt.Errorf("adding ingredient %d: %w", ing.ItemID, err)
 		}
 	}
-	return getMeal(ctx, db, meal.ID)
+	return getMealFull(ctx, db, meal.ID)
 }
 
 func updateMeal(ctx context.Context, db *pgxpool.Pool, id int32, input UpdateMealInput) (*MealResponse, error) {
@@ -217,10 +244,11 @@ func updateMeal(ctx context.Context, db *pgxpool.Pool, id int32, input UpdateMea
 		Name:            input.Name,
 		Description:     toText(input.Description),
 		DefaultPortions: input.DefaultPortions,
+		HouseholdID:     nullableInt4(input.HouseholdID),
 	}); err != nil {
 		return nil, err
 	}
-	return getMeal(ctx, db, id)
+	return getMealFull(ctx, db, id)
 }
 
 func deleteMeal(ctx context.Context, db *pgxpool.Pool, id int32) error {
@@ -255,9 +283,12 @@ func removeIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input
 // ── Cook management ───────────────────────────────────────────────────────────
 
 type CookResponse struct {
-	ID       int32  `json:"id"`
-	Name     string `json:"name"`
-	Username string `json:"username"`
+	ID            int32  `json:"id"`
+	Name          string `json:"name"`
+	Username      string `json:"username"`
+	// HouseholdID is nil when the assignment applies across all households.
+	HouseholdID   *int32 `json:"household_id"`
+	HouseholdName string `json:"household_name"`
 }
 
 func getMealCooks(ctx context.Context, db *pgxpool.Pool, mealID int32) ([]CookResponse, error) {
@@ -268,30 +299,49 @@ func getMealCooks(ctx context.Context, db *pgxpool.Pool, mealID int32) ([]CookRe
 	}
 	out := make([]CookResponse, len(rows))
 	for i, r := range rows {
-		out[i] = CookResponse{ID: r.ID, Name: r.Name, Username: r.Username}
+		c := CookResponse{ID: r.ID, Name: r.Name, Username: r.Username}
+		if r.HouseholdID.Valid {
+			hid := r.HouseholdID.Int32
+			c.HouseholdID = &hid
+		}
+		if r.HouseholdName.Valid {
+			c.HouseholdName = r.HouseholdName.String
+		}
+		out[i] = c
 	}
 	return out, nil
 }
 
-func addMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32) ([]CookResponse, error) {
+func addMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32, householdID pgtype.Int4) ([]CookResponse, error) {
 	q := sqlc.New(db)
-	if err := q.AddMealCook(ctx, sqlc.AddMealCookParams{MealID: mealID, UserID: userID}); err != nil {
+	if err := q.AddMealCook(ctx, sqlc.AddMealCookParams{
+		MealID:      mealID,
+		UserID:      userID,
+		HouseholdID: householdID,
+	}); err != nil {
 		return nil, err
 	}
 	return getMealCooks(ctx, db, mealID)
 }
 
-func removeMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32) ([]CookResponse, error) {
+func removeMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32, householdID pgtype.Int4) ([]CookResponse, error) {
 	q := sqlc.New(db)
-	if err := q.RemoveMealCook(ctx, sqlc.RemoveMealCookParams{MealID: mealID, UserID: userID}); err != nil {
+	if err := q.RemoveMealCook(ctx, sqlc.RemoveMealCookParams{
+		MealID:      mealID,
+		UserID:      userID,
+		HouseholdID: householdID,
+	}); err != nil {
 		return nil, err
 	}
 	return getMealCooks(ctx, db, mealID)
 }
 
-func getMealsForCook(ctx context.Context, db *pgxpool.Pool, userID int32) ([]MealSummary, error) {
+func getMealsForCook(ctx context.Context, db *pgxpool.Pool, userID int32, householdID pgtype.Int4) ([]MealSummary, error) {
 	q := sqlc.New(db)
-	rows, err := q.GetMealsForCook(ctx, userID)
+	rows, err := q.GetMealsForCook(ctx, sqlc.GetMealsForCookParams{
+		UserID:      userID,
+		HouseholdID: householdID,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -333,6 +383,9 @@ type ClearMealPlanInput struct {
 
 type AddCookInput struct {
 	UserID int32 `json:"user_id"`
+	// HouseholdID scopes this cook assignment to a specific household.
+	// Omit (or set 0) to create a cross-household assignment.
+	HouseholdID int32 `json:"household_id"`
 }
 
 func nullableInt4(n int32) pgtype.Int4 {

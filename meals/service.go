@@ -13,12 +13,20 @@ import (
 func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.AppHandler) http.HandlerFunc) {
 	r := httpx.NewRouter(mux, db, wrap, authentication.RequireAuth, "/meals")
 
-	// GET /meals — list all meals with ingredient counts
+	// GET /meals — list meals visible to this session's household
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				return listMeals(r.Context(), db)
+				sess, err := authentication.SessionFromContext(r)
+				if err != nil {
+					return nil, err
+				}
+				householdID := pgtype.Int4{
+					Int32: sess.FirstHouseholdID(),
+					Valid: sess.FirstHouseholdID() != 0,
+				}
+				return listMeals(r.Context(), db, householdID)
 			}
 		},
 	})
@@ -217,7 +225,7 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 				if err != nil {
 					return nil, err
 				}
-				return addMealCook(r.Context(), db, id, input.UserID)
+				return addMealCook(r.Context(), db, id, input.UserID, nullableInt4(input.HouseholdID))
 			}
 		},
 	})
@@ -231,26 +239,30 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 				if err != nil {
 					return nil, err
 				}
-				return removeMealCook(r.Context(), db, id, input.UserID)
+				return removeMealCook(r.Context(), db, id, input.UserID, nullableInt4(input.HouseholdID))
 			}
 		},
 	})
 
-	// GET /meals/for-cook?user_id= — meals a specific user can cook, plus meals with no cooks assigned
+	// GET /meals/for-cook?user_id= — meals a specific user can cook within the caller's household context
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "/for-cook", Method: "GET", Public: false,
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
+				sess, err := authentication.SessionFromContext(r)
+				if err != nil {
+					return nil, err
+				}
 				var userID int32
 				fmt.Sscanf(r.URL.Query().Get("user_id"), "%d", &userID)
 				if userID == 0 {
-					sess, err := authentication.SessionFromContext(r)
-					if err != nil {
-						return nil, err
-					}
 					userID = sess.UserID
 				}
-				return getMealsForCook(r.Context(), db, userID)
+				householdID := pgtype.Int4{
+					Int32: sess.FirstHouseholdID(),
+					Valid: sess.FirstHouseholdID() != 0,
+				}
+				return getMealsForCook(r.Context(), db, userID, householdID)
 			}
 		},
 	})
