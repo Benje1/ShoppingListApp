@@ -236,6 +236,18 @@ func scopeParams(userID, householdID int32, scope string) (pgtype.Int4, pgtype.I
 	return hid, uid
 }
 
+// listParams builds a GetShoppingListParams for scalar (single-household) queries.
+// When householdID is 0 the household field is left as a NULL pgtype.Int4.
+func listParams(userID, householdID int32) sqlc.GetShoppingListParams {
+	p := sqlc.GetShoppingListParams{
+		UserID: pgtype.Int4{Int32: userID, Valid: true},
+	}
+	if householdID != 0 {
+		p.HouseholdID = pgtype.Int4{Int32: householdID, Valid: true}
+	}
+	return p
+}
+
 func mealPlanParams(userID, householdID int32) sqlc.GetMealPlanParams {
 	p := sqlc.GetMealPlanParams{
 		UserID: pgtype.Int4{Int32: userID, Valid: true},

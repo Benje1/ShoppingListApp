@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,17 @@ const sessionContextKey contextKey = "session"
 // pool is the DB connection used for session persistence.
 // Initialised by InitSessionStore before any HTTP traffic is served.
 var pool *pgxpool.Pool
+
+// inMemorySessions is used as a fallback when pool is nil (e.g. in unit tests).
+var inMemorySessions = struct {
+	sync.RWMutex
+	data map[string]inMemorySession
+}{data: make(map[string]inMemorySession)}
+
+type inMemorySession struct {
+	session   Session
+	expiresAt time.Time
+}
 
 // InitSessionStore wires up the database pool used by all session functions.
 // Call this once from main, before starting the HTTP server.
@@ -68,26 +80,42 @@ func newSessionID() string {
 	return hex.EncodeToString(b)
 }
 
-// CreateSession persists a new session to Postgres, sets the cookie, and
+// CreateSession persists a new session (to Postgres when configured, or to an
+// in-memory store when pool is nil — used by unit tests), sets the cookie, and
 // returns the raw session ID so the caller can include it in the response body.
 func CreateSession(w http.ResponseWriter, username string, userID int32, householdIds []int32) string {
 	sessionID := newSessionID()
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
 
-	hids := make([]int64, len(householdIds))
-	for i, h := range householdIds {
-		hids[i] = int64(h)
-	}
+	if pool == nil {
+		// In-memory fallback (used by unit tests that don't have a DB).
+		inMemorySessions.Lock()
+		inMemorySessions.data[sessionID] = inMemorySession{
+			session: Session{
+				Username:     username,
+				UserID:       userID,
+				HouseholdIds: householdIds,
+				ExpiresAt:    expiresAt,
+			},
+			expiresAt: expiresAt,
+		}
+		inMemorySessions.Unlock()
+	} else {
+		hids := make([]int64, len(householdIds))
+		for i, h := range householdIds {
+			hids[i] = int64(h)
+		}
 
-	_, err := pool.Exec(context.Background(),
-		`INSERT INTO sessions (id, user_id, username, household_ids, expires_at)
+		_, err := pool.Exec(context.Background(),
+			`INSERT INTO sessions (id, user_id, username, household_ids, expires_at)
 		 VALUES ($1, $2, $3, $4, $5)`,
-		sessionID, userID, username, hids, expiresAt,
-	)
-	if err != nil {
-		fmt.Printf("session insert error: %v\n", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return ""
+			sessionID, userID, username, hids, expiresAt,
+		)
+		if err != nil {
+			fmt.Printf("session insert error: %v\n", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return ""
+		}
 	}
 
 	// Also set the cookie — still works for same-origin / curl / Postman usage.
@@ -109,11 +137,17 @@ func CreateSession(w http.ResponseWriter, username string, userID int32, househo
 	return sessionID
 }
 
-// DestroySession deletes the session from Postgres and clears the cookie.
+// DestroySession deletes the session from the store and clears the cookie.
 func DestroySession(w http.ResponseWriter, r *http.Request) {
 	token := extractToken(r)
 	if token != "" {
-		pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, token)
+		if pool == nil {
+			inMemorySessions.Lock()
+			delete(inMemorySessions.data, token)
+			inMemorySessions.Unlock()
+		} else {
+			pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, token)
+		}
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:   "session_id",
@@ -136,11 +170,28 @@ func extractToken(r *http.Request) string {
 	return ""
 }
 
-// getSession loads and validates a session from Postgres.
+// getSession loads and validates a session from the configured store.
 func getSession(r *http.Request) (Session, bool) {
 	token := extractToken(r)
 	if token == "" {
 		return Session{}, false
+	}
+
+	if pool == nil {
+		// In-memory fallback for unit tests.
+		inMemorySessions.RLock()
+		entry, ok := inMemorySessions.data[token]
+		inMemorySessions.RUnlock()
+		if !ok {
+			return Session{}, false
+		}
+		if time.Now().After(entry.expiresAt) {
+			inMemorySessions.Lock()
+			delete(inMemorySessions.data, token)
+			inMemorySessions.Unlock()
+			return Session{}, false
+		}
+		return entry.session, true
 	}
 
 	var (
@@ -232,4 +283,19 @@ func StartSessionCleanup() {
 			pool.Exec(context.Background(), `DELETE FROM sessions WHERE expires_at < now()`)
 		}
 	}()
+}
+
+// ExpireSessionForTesting forcibly expires a session identified by its cookie value.
+// This is intended only for use in unit tests — it has no effect when pool != nil.
+func ExpireSessionForTesting(sessionID string) {
+	if pool != nil {
+		return
+	}
+	inMemorySessions.Lock()
+	if entry, ok := inMemorySessions.data[sessionID]; ok {
+		entry.expiresAt = time.Now().Add(-time.Second)
+		entry.session.ExpiresAt = entry.expiresAt
+		inMemorySessions.data[sessionID] = entry
+	}
+	inMemorySessions.Unlock()
 }

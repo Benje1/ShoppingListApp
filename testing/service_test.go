@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"weekly-shopping-app/authentication"
-	"weekly-shopping-app/database/sqlc"
+	sqlc "weekly-shopping-app/database/sqlc"
 )
 
 func TestLoginService(t *testing.T) {
@@ -15,7 +15,7 @@ func TestLoginService(t *testing.T) {
 	}
 
 	repo := &FakeUserRepo{
-		User: &database.User{
+		User: &sqlc.User{
 			Username:     "bob",
 			Name:         "bob",
 			PasswordHash: hash,
