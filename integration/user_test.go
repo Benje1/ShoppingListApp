@@ -9,7 +9,7 @@ import (
 )
 
 func newUserRepo() *database.PostgresUserRepo {
-	return &database.PostgresUserRepo{DB: TestPool()}
+	return &database.PostgresUserRepo{DB: sharedPool()}
 }
 
 // ── InsertUser ────────────────────────────────────────────────────────────────

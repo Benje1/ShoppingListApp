@@ -22,7 +22,7 @@ func householdScope(householdID int32) (hid pgtype.Int4, uid pgtype.Int4) {
 // ── CreateShoppingItem ────────────────────────────────────────────────────────
 
 func TestIntegration_CreateShoppingItem_Succeeds(t *testing.T) {
-	item, err := sqlc.New(TestPool()).CreateShoppingItem(context.Background(), sqlc.CreateShoppingItemParams{
+	item, err := sqlc.New(sharedPool()).CreateShoppingItem(context.Background(), sqlc.CreateShoppingItemParams{
 		Name:            "New Catalogue Item",
 		ItemType:        sqlc.ShoppingItemTypePantry,
 		PortionsPerUnit: 4,
@@ -42,7 +42,7 @@ func TestIntegration_CreateShoppingItem_Succeeds(t *testing.T) {
 
 func TestIntegration_ShoppingList_AddPersonal_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	hid, userID := personalScope(uid)
 
@@ -70,7 +70,7 @@ func TestIntegration_ShoppingList_AddPersonal_Succeeds(t *testing.T) {
 
 func TestIntegration_ShoppingList_AddHousehold_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	ownerID, _, _ := makeUser(t)
 	householdID := makeHousehold(t, ownerID)
 	hid, uid := householdScope(householdID)
@@ -93,7 +93,7 @@ func TestIntegration_ShoppingList_AddHousehold_Succeeds(t *testing.T) {
 
 func TestIntegration_ShoppingList_AddSameItemTwice_AccumulatesQuantity(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	ownerID, _, _ := makeUser(t)
 	householdID := makeHousehold(t, ownerID)
 	hid, uid := householdScope(householdID)
@@ -120,7 +120,7 @@ func TestIntegration_ShoppingList_AddSameItemTwice_AccumulatesQuantity(t *testin
 
 func TestIntegration_ShoppingList_Remove_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	hid, userID := personalScope(uid)
 
@@ -138,7 +138,7 @@ func TestIntegration_ShoppingList_Remove_Succeeds(t *testing.T) {
 		t.Fatalf("RemoveFromShoppingList: %v", err)
 	}
 
-	rows, err := TestPool().Query(ctx, "SELECT id FROM shopping_list WHERE id = $1", entry.ID)
+	rows, err := sharedPool().Query(ctx, "SELECT id FROM shopping_list WHERE id = $1", entry.ID)
 	if err != nil {
 		t.Fatalf("query after remove: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestIntegration_ShoppingList_Remove_Succeeds(t *testing.T) {
 
 func TestIntegration_ShoppingList_HouseholdScope_Isolated(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 
 	owner1, _, _ := makeUser(t)
 	owner2, _, _ := makeUser(t)
@@ -171,7 +171,7 @@ func TestIntegration_ShoppingList_HouseholdScope_Isolated(t *testing.T) {
 	}
 
 	// Household 2 should see no entries for that item.
-	rows, err := TestPool().Query(ctx,
+	rows, err := sharedPool().Query(ctx,
 		"SELECT id FROM shopping_list WHERE household_id = $1 AND shopping_item_id = $2",
 		hid2, SeedItems.Cheese,
 	)
@@ -188,7 +188,7 @@ func TestIntegration_ShoppingList_HouseholdScope_Isolated(t *testing.T) {
 
 func TestIntegration_ShoppingList_MarkHaveIt_AppearsInGetHaveIt(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	_, userID := personalScope(uid)
 	noHousehold := pgtype.Int4{Valid: false}
@@ -222,7 +222,7 @@ func TestIntegration_ShoppingList_MarkHaveIt_AppearsInGetHaveIt(t *testing.T) {
 
 func TestIntegration_ShoppingList_UnmarkHaveIt_DisappearsFromGetHaveIt(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	_, userID := personalScope(uid)
 	noHousehold := pgtype.Int4{Valid: false}

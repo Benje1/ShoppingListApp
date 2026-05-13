@@ -9,7 +9,7 @@ import (
 )
 
 func newHouseholdRepo() *database.PostgresHouseholdRepo {
-	return &database.PostgresHouseholdRepo{DB: TestPool()}
+	return &database.PostgresHouseholdRepo{DB: sharedPool()}
 }
 
 // ── InsertHousehold ───────────────────────────────────────────────────────────

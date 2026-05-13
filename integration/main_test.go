@@ -61,7 +61,7 @@ var (
 )
 
 // TestPool returns the shared pool. Tests must not close it.
-func TestPool() *pgxpool.Pool { return testPool }
+func sharedPool() *pgxpool.Pool { return testPool }
 
 // uniqueUsername returns a name that won't collide between concurrent tests.
 func uniqueUsername(base string) string {

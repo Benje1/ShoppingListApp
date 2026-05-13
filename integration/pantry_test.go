@@ -31,7 +31,7 @@ func numericToFloat(n pgtype.Numeric) float64 {
 
 func TestIntegration_Pantry_Upsert_PersonalScope_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	_, userID := personalScope(uid)
 
@@ -59,7 +59,7 @@ func TestIntegration_Pantry_Upsert_PersonalScope_Succeeds(t *testing.T) {
 
 func TestIntegration_Pantry_Upsert_HouseholdScope_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	ownerID, _, _ := makeUser(t)
 	householdID := makeHousehold(t, ownerID)
 	hid, uid := householdScope(householdID)
@@ -83,7 +83,7 @@ func TestIntegration_Pantry_Upsert_HouseholdScope_Succeeds(t *testing.T) {
 
 func TestIntegration_Pantry_Upsert_SameItemTwice_AccumulatesPortions(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	ownerID, _, _ := makeUser(t)
 	householdID := makeHousehold(t, ownerID)
 	hid, uid := householdScope(householdID)
@@ -111,7 +111,7 @@ func TestIntegration_Pantry_Upsert_SameItemTwice_AccumulatesPortions(t *testing.
 
 func TestIntegration_Pantry_GetPantry_ReturnsEntry(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	_, userID := personalScope(uid)
 
@@ -147,7 +147,7 @@ func TestIntegration_Pantry_GetPantry_ReturnsEntry(t *testing.T) {
 
 func TestIntegration_Pantry_Remove_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	_, userID := personalScope(uid)
 
@@ -183,7 +183,7 @@ func TestIntegration_Pantry_Remove_Succeeds(t *testing.T) {
 
 func TestIntegration_Pantry_Decrement_ReducesPortions(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	_, userID := personalScope(uid)
 
@@ -212,7 +212,7 @@ func TestIntegration_Pantry_Decrement_ReducesPortions(t *testing.T) {
 
 func TestIntegration_Pantry_Decrement_ClampsToZero(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	ownerID, _, _ := makeUser(t)
 	householdID := makeHousehold(t, ownerID)
 	hid, uid := householdScope(householdID)
@@ -255,7 +255,7 @@ func TestIntegration_Pantry_Decrement_ClampsToZero(t *testing.T) {
 
 func TestIntegration_Pantry_ExpiryJob_MarksExpiredAndExpiringSoon(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	_, userID := personalScope(uid)
 

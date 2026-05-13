@@ -21,7 +21,7 @@ func weekOf(t time.Time) time.Time {
 // ── CreateMeal ────────────────────────────────────────────────────────────────
 
 func TestIntegration_CreateMeal_Succeeds(t *testing.T) {
-	meal, err := sqlc.New(TestPool()).CreateMeal(context.Background(), sqlc.CreateMealParams{
+	meal, err := sqlc.New(sharedPool()).CreateMeal(context.Background(), sqlc.CreateMealParams{
 		Name:            "Spaghetti Bolognese",
 		DefaultPortions: 4,
 	})
@@ -43,7 +43,7 @@ func TestIntegration_CreateMeal_Succeeds(t *testing.T) {
 
 func TestIntegration_UpdateMeal_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	mealID := makeMeal(t, "Before")
 
 	updated, err := q.UpdateMeal(ctx, sqlc.UpdateMealParams{
@@ -66,7 +66,7 @@ func TestIntegration_UpdateMeal_Succeeds(t *testing.T) {
 
 func TestIntegration_DeleteMeal_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	mealID := makeMeal(t, "ToDelete")
 
 	if err := q.DeleteMeal(ctx, mealID); err != nil {
@@ -80,7 +80,7 @@ func TestIntegration_DeleteMeal_Succeeds(t *testing.T) {
 // ── GetMeal ───────────────────────────────────────────────────────────────────
 
 func TestIntegration_GetMeal_NotFound_ReturnsError(t *testing.T) {
-	_, err := sqlc.New(TestPool()).GetMeal(context.Background(), -1)
+	_, err := sqlc.New(sharedPool()).GetMeal(context.Background(), -1)
 	if err == nil {
 		t.Fatal("expected an error for unknown meal ID, got nil")
 	}
@@ -90,7 +90,7 @@ func TestIntegration_GetMeal_NotFound_ReturnsError(t *testing.T) {
 
 func TestIntegration_MealIngredients_AddAndGet(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	mealID := makeMeal(t, "PastaWithSauce")
 
 	if _, err := q.AddMealIngredient(ctx, sqlc.AddMealIngredientParams{
@@ -116,7 +116,7 @@ func TestIntegration_MealIngredients_AddAndGet(t *testing.T) {
 
 func TestIntegration_MealIngredients_Remove_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	mealID := makeMeal(t, "MealToRemoveIngredient")
 
 	if _, err := q.AddMealIngredient(ctx, sqlc.AddMealIngredientParams{
@@ -148,7 +148,7 @@ func TestIntegration_MealIngredients_Remove_Succeeds(t *testing.T) {
 
 func TestIntegration_MealCooks_AddAndGet(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	cookID, _, _ := makeUser(t)
 	mealID := makeMeal(t, "CookMeal")
 
@@ -170,7 +170,7 @@ func TestIntegration_MealCooks_AddAndGet(t *testing.T) {
 
 func TestIntegration_MealCooks_AddDuplicate_IsIdempotent(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	cookID, _, _ := makeUser(t)
 	mealID := makeMeal(t, "DupeCookMeal")
 
@@ -193,7 +193,7 @@ func TestIntegration_MealCooks_AddDuplicate_IsIdempotent(t *testing.T) {
 
 func TestIntegration_MealCooks_Remove_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	cookID, _, _ := makeUser(t)
 	mealID := makeMeal(t, "RemoveCookMeal")
 
@@ -215,7 +215,7 @@ func TestIntegration_MealCooks_Remove_Succeeds(t *testing.T) {
 
 func TestIntegration_GetMealsForCook_ReturnsAssignedAndUnassigned(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	cookID, _, _ := makeUser(t)
 
 	assignedMeal := makeMeal(t, "AssignedMeal")
@@ -246,7 +246,7 @@ func TestIntegration_GetMealsForCook_ReturnsAssignedAndUnassigned(t *testing.T) 
 
 func TestIntegration_SetMealPlanDay_Personal_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	mealID := makeMeal(t, "MondayMeal")
 	_, userID := personalScope(uid)
@@ -269,7 +269,7 @@ func TestIntegration_SetMealPlanDay_Personal_Succeeds(t *testing.T) {
 
 func TestIntegration_SetMealPlanDay_Household_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	ownerID, _, _ := makeUser(t)
 	householdID := makeHousehold(t, ownerID)
 	mealID := makeMeal(t, "TuesdayMeal")
@@ -290,7 +290,7 @@ func TestIntegration_SetMealPlanDay_Household_Succeeds(t *testing.T) {
 
 func TestIntegration_SetMealPlanDay_Upsert_UpdatesMeal(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	meal1 := makeMeal(t, "OriginalMeal")
 	meal2 := makeMeal(t, "ReplacementMeal")
@@ -319,7 +319,7 @@ func TestIntegration_SetMealPlanDay_Upsert_UpdatesMeal(t *testing.T) {
 
 func TestIntegration_ClearMealPlanDay_Succeeds(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	mealID := makeMeal(t, "ToClearMeal")
 	_, userID := personalScope(uid)
@@ -358,7 +358,7 @@ func TestIntegration_ClearMealPlanDay_Succeeds(t *testing.T) {
 
 func TestIntegration_GetMealPlanFull_ReturnsDayWithJoinedMealName(t *testing.T) {
 	ctx := context.Background()
-	q := sqlc.New(TestPool())
+	q := sqlc.New(sharedPool())
 	uid, _, _ := makeUser(t)
 	mealID := makeMeal(t, "FullPlanMeal")
 	_, userID := personalScope(uid)
@@ -414,7 +414,7 @@ func TestIntegration_SetWeekPlanDay_PersonalScope_Succeeds(t *testing.T) {
 	_, userID := personalScope(uid)
 	week := weekOf(time.Now())
 
-	err := database.SetWeekPlanDay(ctx, TestPool(), database.SetWeekPlanDayParams{
+	err := database.SetWeekPlanDay(ctx, sharedPool(), database.SetWeekPlanDayParams{
 		DayName:   "Monday",
 		WeekStart: week,
 		MealID:    pgtype.Int4{Int32: mealID, Valid: true},
@@ -424,7 +424,7 @@ func TestIntegration_SetWeekPlanDay_PersonalScope_Succeeds(t *testing.T) {
 		t.Fatalf("SetWeekPlanDay: %v", err)
 	}
 
-	rows, err := database.GetWeekPlan(ctx, TestPool(), database.GetWeekPlanParams{
+	rows, err := database.GetWeekPlan(ctx, sharedPool(), database.GetWeekPlanParams{
 		WeekStart: week,
 		UserID:    userID,
 	})
@@ -450,7 +450,7 @@ func TestIntegration_SetWeekPlanDay_HouseholdScope_Succeeds(t *testing.T) {
 	hid, uid := householdScope(householdID)
 	week := weekOf(time.Now())
 
-	err := database.SetWeekPlanDay(ctx, TestPool(), database.SetWeekPlanDayParams{
+	err := database.SetWeekPlanDay(ctx, sharedPool(), database.SetWeekPlanDayParams{
 		DayName:     "Wednesday",
 		WeekStart:   week,
 		MealID:      pgtype.Int4{Int32: mealID, Valid: true},
@@ -461,7 +461,7 @@ func TestIntegration_SetWeekPlanDay_HouseholdScope_Succeeds(t *testing.T) {
 		t.Fatalf("SetWeekPlanDay: %v", err)
 	}
 
-	rows, err := database.GetWeekPlan(ctx, TestPool(), database.GetWeekPlanParams{
+	rows, err := database.GetWeekPlan(ctx, sharedPool(), database.GetWeekPlanParams{
 		WeekStart:   week,
 		HouseholdID: hid,
 		UserID:      uid,
@@ -486,7 +486,7 @@ func TestIntegration_SetWeekPlanDay_Upsert_UpdatesExistingDay(t *testing.T) {
 	week := weekOf(time.Now())
 
 	for _, mID := range []int32{meal1, meal2} {
-		if err := database.SetWeekPlanDay(ctx, TestPool(), database.SetWeekPlanDayParams{
+		if err := database.SetWeekPlanDay(ctx, sharedPool(), database.SetWeekPlanDayParams{
 			DayName:   "Thursday",
 			WeekStart: week,
 			MealID:    pgtype.Int4{Int32: mID, Valid: true},
@@ -496,7 +496,7 @@ func TestIntegration_SetWeekPlanDay_Upsert_UpdatesExistingDay(t *testing.T) {
 		}
 	}
 
-	rows, err := database.GetWeekPlan(ctx, TestPool(), database.GetWeekPlanParams{
+	rows, err := database.GetWeekPlan(ctx, sharedPool(), database.GetWeekPlanParams{
 		WeekStart: week,
 		UserID:    userID,
 	})
@@ -519,7 +519,7 @@ func TestIntegration_GetWeekPlan_EmptyWeek_ReturnsNoRows(t *testing.T) {
 	// Use a week far in the future that can't have any existing rows.
 	futureWeek := weekOf(time.Now().AddDate(10, 0, 0))
 
-	rows, err := database.GetWeekPlan(ctx, TestPool(), database.GetWeekPlanParams{
+	rows, err := database.GetWeekPlan(ctx, sharedPool(), database.GetWeekPlanParams{
 		WeekStart: futureWeek,
 		UserID:    userID,
 	})
@@ -543,7 +543,7 @@ func TestIntegration_GenerateNextWeek_CopiesRepeatingAssignments(t *testing.T) {
 	nextWeek := thisWeek.AddDate(0, 0, 7)
 
 	// Set a repeating assignment in this week.
-	if err := database.SetWeekPlanDay(ctx, TestPool(), database.SetWeekPlanDayParams{
+	if err := database.SetWeekPlanDay(ctx, sharedPool(), database.SetWeekPlanDayParams{
 		DayName:         "Saturday",
 		WeekStart:       thisWeek,
 		RepeatingMealID: pgtype.Int4{Int32: mealID, Valid: true},
@@ -552,7 +552,7 @@ func TestIntegration_GenerateNextWeek_CopiesRepeatingAssignments(t *testing.T) {
 		t.Fatalf("SetWeekPlanDay (repeating): %v", err)
 	}
 
-	n, err := database.GenerateNextWeek(ctx, TestPool(), database.GenerateWeekParams{
+	n, err := database.GenerateNextWeek(ctx, sharedPool(), database.GenerateWeekParams{
 		TargetWeekStart: nextWeek,
 		UserID:          userID,
 	})
@@ -563,7 +563,7 @@ func TestIntegration_GenerateNextWeek_CopiesRepeatingAssignments(t *testing.T) {
 		t.Fatal("expected at least one row to be generated")
 	}
 
-	rows, err := database.GetWeekPlan(ctx, TestPool(), database.GetWeekPlanParams{
+	rows, err := database.GetWeekPlan(ctx, sharedPool(), database.GetWeekPlanParams{
 		WeekStart: nextWeek,
 		UserID:    userID,
 	})
@@ -594,7 +594,7 @@ func TestIntegration_GenerateNextWeek_DoesNotOverwriteExistingRows(t *testing.T)
 	nextWeek := thisWeek.AddDate(0, 0, 7)
 
 	// Set repeating in this week.
-	if err := database.SetWeekPlanDay(ctx, TestPool(), database.SetWeekPlanDayParams{
+	if err := database.SetWeekPlanDay(ctx, sharedPool(), database.SetWeekPlanDayParams{
 		DayName:         "Sunday",
 		WeekStart:       thisWeek,
 		RepeatingMealID: pgtype.Int4{Int32: repeatingMeal, Valid: true},
@@ -604,7 +604,7 @@ func TestIntegration_GenerateNextWeek_DoesNotOverwriteExistingRows(t *testing.T)
 	}
 
 	// Manually set Sunday of next week before generating.
-	if err := database.SetWeekPlanDay(ctx, TestPool(), database.SetWeekPlanDayParams{
+	if err := database.SetWeekPlanDay(ctx, sharedPool(), database.SetWeekPlanDayParams{
 		DayName:   "Sunday",
 		WeekStart: nextWeek,
 		MealID:    pgtype.Int4{Int32: manualMeal, Valid: true},
@@ -613,14 +613,14 @@ func TestIntegration_GenerateNextWeek_DoesNotOverwriteExistingRows(t *testing.T)
 		t.Fatalf("SetWeekPlanDay (manual): %v", err)
 	}
 
-	if _, err := database.GenerateNextWeek(ctx, TestPool(), database.GenerateWeekParams{
+	if _, err := database.GenerateNextWeek(ctx, sharedPool(), database.GenerateWeekParams{
 		TargetWeekStart: nextWeek,
 		UserID:          userID,
 	}); err != nil {
 		t.Fatalf("GenerateNextWeek: %v", err)
 	}
 
-	rows, err := database.GetWeekPlan(ctx, TestPool(), database.GetWeekPlanParams{
+	rows, err := database.GetWeekPlan(ctx, sharedPool(), database.GetWeekPlanParams{
 		WeekStart: nextWeek,
 		UserID:    userID,
 	})
@@ -644,7 +644,7 @@ func TestIntegration_DistinctScopes_IncludesScopeWithRepeating(t *testing.T) {
 	_, userID := personalScope(uid)
 	week := weekOf(time.Now().AddDate(0, 0, 21)) // distinct week to avoid collision
 
-	if err := database.SetWeekPlanDay(ctx, TestPool(), database.SetWeekPlanDayParams{
+	if err := database.SetWeekPlanDay(ctx, sharedPool(), database.SetWeekPlanDayParams{
 		DayName:         "Monday",
 		WeekStart:       week,
 		RepeatingMealID: pgtype.Int4{Int32: mealID, Valid: true},
@@ -653,7 +653,7 @@ func TestIntegration_DistinctScopes_IncludesScopeWithRepeating(t *testing.T) {
 		t.Fatalf("SetWeekPlanDay: %v", err)
 	}
 
-	scopes, err := database.DistinctScopes(ctx, TestPool())
+	scopes, err := database.DistinctScopes(ctx, sharedPool())
 	if err != nil {
 		t.Fatalf("DistinctScopes: %v", err)
 	}
