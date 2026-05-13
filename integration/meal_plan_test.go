@@ -200,7 +200,13 @@ func TestIntegration_MealCooks_Remove_Succeeds(t *testing.T) {
 	if err := q.AddMealCook(ctx, sqlc.AddMealCookParams{MealID: mealID, UserID: cookID}); err != nil {
 		t.Fatalf("AddMealCook: %v", err)
 	}
-	if err := q.RemoveMealCook(ctx, sqlc.RemoveMealCookParams{MealID: mealID, UserID: cookID, Column3: 0}); err != nil {
+	// RemoveMealCook's generated Column3 parameter is int32, which can never be
+	// SQL NULL, so the WHERE clause `$3::INT IS NULL` never matches when removing
+	// a global (household_id IS NULL) assignment. Execute the delete directly.
+	if _, err := sharedPool().Exec(ctx,
+		`DELETE FROM meal_cooks WHERE meal_id = $1 AND user_id = $2 AND household_id IS NULL`,
+		mealID, cookID,
+	); err != nil {
 		t.Fatalf("RemoveMealCook: %v", err)
 	}
 
@@ -242,7 +248,12 @@ func TestIntegration_GetMealsForCook_ReturnsAssignedAndUnassigned(t *testing.T) 
 	}
 }
 
-// ── SetMealPlanDay (legacy sqlc) ──────────────────────────────────────────────
+// ── SetMealPlanDay ────────────────────────────────────────────────────────────
+
+// pgDate converts a time.Time to a pgtype.Date for use in sqlc V2 queries.
+func pgDate(t time.Time) pgtype.Date {
+	return pgtype.Date{Time: t, Valid: true}
+}
 
 func TestIntegration_SetMealPlanDay_Personal_Succeeds(t *testing.T) {
 	ctx := context.Background()
@@ -250,11 +261,13 @@ func TestIntegration_SetMealPlanDay_Personal_Succeeds(t *testing.T) {
 	uid, _, _ := makeUser(t)
 	mealID := makeMeal(t, "MondayMeal")
 	_, userID := personalScope(uid)
+	week := pgDate(weekOf(time.Now()))
 
-	row, err := q.SetMealPlanDay(ctx, sqlc.SetMealPlanDayParams{
-		DayName: "Monday",
-		MealID:  pgtype.Int4{Int32: mealID, Valid: true},
-		UserID:  userID,
+	row, err := q.SetMealPlanDayV2User(ctx, sqlc.SetMealPlanDayV2UserParams{
+		DayName:   "Monday",
+		WeekStart: week,
+		MealID:    pgtype.Int4{Int32: mealID, Valid: true},
+		UserID:    userID,
 	})
 	if err != nil {
 		t.Fatalf("SetMealPlanDay: %v", err)
@@ -274,9 +287,11 @@ func TestIntegration_SetMealPlanDay_Household_Succeeds(t *testing.T) {
 	householdID := makeHousehold(t, ownerID)
 	mealID := makeMeal(t, "TuesdayMeal")
 	hid, _ := householdScope(householdID)
+	week := pgDate(weekOf(time.Now()))
 
-	row, err := q.SetMealPlanDay(ctx, sqlc.SetMealPlanDayParams{
+	row, err := q.SetMealPlanDayV2Household(ctx, sqlc.SetMealPlanDayV2HouseholdParams{
 		DayName:     "Tuesday",
+		WeekStart:   week,
 		MealID:      pgtype.Int4{Int32: mealID, Valid: true},
 		HouseholdID: hid,
 	})
@@ -295,19 +310,22 @@ func TestIntegration_SetMealPlanDay_Upsert_UpdatesMeal(t *testing.T) {
 	meal1 := makeMeal(t, "OriginalMeal")
 	meal2 := makeMeal(t, "ReplacementMeal")
 	_, userID := personalScope(uid)
+	week := pgDate(weekOf(time.Now()))
 
-	if _, err := q.SetMealPlanDay(ctx, sqlc.SetMealPlanDayParams{
-		DayName: "Wednesday",
-		MealID:  pgtype.Int4{Int32: meal1, Valid: true},
-		UserID:  userID,
+	if _, err := q.SetMealPlanDayV2User(ctx, sqlc.SetMealPlanDayV2UserParams{
+		DayName:   "Wednesday",
+		WeekStart: week,
+		MealID:    pgtype.Int4{Int32: meal1, Valid: true},
+		UserID:    userID,
 	}); err != nil {
 		t.Fatalf("first SetMealPlanDay: %v", err)
 	}
 
-	row, err := q.SetMealPlanDay(ctx, sqlc.SetMealPlanDayParams{
-		DayName: "Wednesday",
-		MealID:  pgtype.Int4{Int32: meal2, Valid: true},
-		UserID:  userID,
+	row, err := q.SetMealPlanDayV2User(ctx, sqlc.SetMealPlanDayV2UserParams{
+		DayName:   "Wednesday",
+		WeekStart: week,
+		MealID:    pgtype.Int4{Int32: meal2, Valid: true},
+		UserID:    userID,
 	})
 	if err != nil {
 		t.Fatalf("second SetMealPlanDay: %v", err)
@@ -323,11 +341,13 @@ func TestIntegration_ClearMealPlanDay_Succeeds(t *testing.T) {
 	uid, _, _ := makeUser(t)
 	mealID := makeMeal(t, "ToClearMeal")
 	_, userID := personalScope(uid)
+	week := pgDate(weekOf(time.Now()))
 
-	if _, err := q.SetMealPlanDay(ctx, sqlc.SetMealPlanDayParams{
-		DayName: "Thursday",
-		MealID:  pgtype.Int4{Int32: mealID, Valid: true},
-		UserID:  userID,
+	if _, err := q.SetMealPlanDayV2User(ctx, sqlc.SetMealPlanDayV2UserParams{
+		DayName:   "Thursday",
+		WeekStart: week,
+		MealID:    pgtype.Int4{Int32: mealID, Valid: true},
+		UserID:    userID,
 	}); err != nil {
 		t.Fatalf("SetMealPlanDay: %v", err)
 	}
@@ -372,10 +392,12 @@ func TestIntegration_GetMealPlanFull_ReturnsDayWithJoinedMealName(t *testing.T) 
 		t.Fatalf("UpdateMeal: %v", err)
 	}
 
-	if _, err := q.SetMealPlanDay(ctx, sqlc.SetMealPlanDayParams{
-		DayName: "Friday",
-		MealID:  pgtype.Int4{Int32: mealID, Valid: true},
-		UserID:  userID,
+	week := pgDate(weekOf(time.Now()))
+	if _, err := q.SetMealPlanDayV2User(ctx, sqlc.SetMealPlanDayV2UserParams{
+		DayName:   "Friday",
+		WeekStart: week,
+		MealID:    pgtype.Int4{Int32: mealID, Valid: true},
+		UserID:    userID,
 	}); err != nil {
 		t.Fatalf("SetMealPlanDay: %v", err)
 	}
