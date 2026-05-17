@@ -33,6 +33,7 @@ type MealResponse struct {
 	Name            string `json:"name"`
 	Description     string `json:"description"`
 	DefaultPortions int32  `json:"default_portions"`
+	Season          string `json:"season"` // empty string means no season set
 	// HouseholdID is nil for global/shared meals.
 	HouseholdID *int32               `json:"household_id"`
 	Ingredients []IngredientResponse `json:"ingredients"`
@@ -46,6 +47,7 @@ type MealSummary struct {
 	Name            string `json:"name"`
 	Description     string `json:"description"`
 	DefaultPortions int32  `json:"default_portions"`
+	Season          string `json:"season"` // empty string means no season set
 	IngredientCount int64  `json:"ingredient_count"`
 	// HouseholdID is nil for global/shared meals.
 	HouseholdID *int32 `json:"household_id"`
@@ -57,6 +59,7 @@ type CreateMealInput struct {
 	Name            string            `json:"name"`
 	Description     string            `json:"description"`
 	DefaultPortions int32             `json:"default_portions"`
+	Season          string            `json:"season"` // "spring"|"summer"|"autumn"|"winter"|"" (nullable)
 	Ingredients     []IngredientInput `json:"ingredients"`
 	// HouseholdID makes this meal household-specific. Omit (or set 0) for a global meal.
 	HouseholdID int32 `json:"household_id"`
@@ -72,6 +75,7 @@ type UpdateMealInput struct {
 	Name            string `json:"name"`
 	Description     string `json:"description"`
 	DefaultPortions int32  `json:"default_portions"`
+	Season          string `json:"season"` // "spring"|"summer"|"autumn"|"winter"|"" (nullable)
 	// HouseholdID makes this meal household-specific. Set 0 to make it global again.
 	HouseholdID int32 `json:"household_id"`
 }
@@ -99,6 +103,14 @@ func toNumeric(f float64) pgtype.Numeric {
 	n := pgtype.Numeric{}
 	_ = n.Scan(fmt.Sprintf("%.2f", f))
 	return n
+}
+
+func toNullSeason(s string) sqlc.NullSeason {
+	switch sqlc.Season(s) {
+	case sqlc.SeasonSpring, sqlc.SeasonSummer, sqlc.SeasonAutumn, sqlc.SeasonWinter:
+		return sqlc.NullSeason{Season: sqlc.Season(s), Valid: true}
+	}
+	return sqlc.NullSeason{}
 }
 
 func numericToFloat(n pgtype.Numeric) float64 {
@@ -139,6 +151,9 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 		Components:      []ComponentResponse{},
 		PartOf:          []ParentRef{},
 	}
+	if meal.Season.Valid {
+		resp.Season = string(meal.Season.Season)
+	}
 	if meal.HouseholdID.Valid {
 		hid := meal.HouseholdID.Int32
 		resp.HouseholdID = &hid
@@ -166,6 +181,9 @@ func listMeals(ctx context.Context, db *pgxpool.Pool, householdID pgtype.Int4) (
 			Description:     desc,
 			DefaultPortions: r.DefaultPortions,
 			IngredientCount: r.IngredientCount,
+		}
+		if r.Season.Valid {
+			s.Season = string(r.Season.Season)
 		}
 		if r.HouseholdID.Valid {
 			hid := r.HouseholdID.Int32
@@ -215,6 +233,7 @@ func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*
 		Name:            input.Name,
 		Description:     toText(input.Description),
 		DefaultPortions: input.DefaultPortions,
+		Season:          toNullSeason(input.Season),
 		HouseholdID:     nullableInt4(input.HouseholdID),
 	})
 	if err != nil {
@@ -244,6 +263,7 @@ func updateMeal(ctx context.Context, db *pgxpool.Pool, id int32, input UpdateMea
 		Name:            input.Name,
 		Description:     toText(input.Description),
 		DefaultPortions: input.DefaultPortions,
+		Season:          toNullSeason(input.Season),
 		HouseholdID:     nullableInt4(input.HouseholdID),
 	}); err != nil {
 		return nil, err

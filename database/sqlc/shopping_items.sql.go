@@ -109,6 +109,42 @@ func (q *Queries) ListShoppingItems(ctx context.Context) ([]ListShoppingItemsRow
 	return items, nil
 }
 
+const updateShoppingItem = `-- name: UpdateShoppingItem :one
+UPDATE shopping_items
+SET
+    name             = COALESCE($2, name),
+    item_type        = COALESCE($3, item_type),
+    portions_per_unit = COALESCE($4, portions_per_unit)
+WHERE id = $1
+RETURNING id, name, item_type, text_id, portions_per_unit, shelf_life_days
+`
+
+type UpdateShoppingItemParams struct {
+	ID              int32            `json:"id"`
+	Name            string           `json:"name"`
+	ItemType        ShoppingItemType `json:"item_type"`
+	PortionsPerUnit int32            `json:"portions_per_unit"`
+}
+
+func (q *Queries) UpdateShoppingItem(ctx context.Context, arg UpdateShoppingItemParams) (ShoppingItem, error) {
+	row := q.db.QueryRow(ctx, updateShoppingItem,
+		arg.ID,
+		arg.Name,
+		arg.ItemType,
+		arg.PortionsPerUnit,
+	)
+	var i ShoppingItem
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ItemType,
+		&i.TextID,
+		&i.PortionsPerUnit,
+		&i.ShelfLifeDays,
+	)
+	return i, err
+}
+
 const updateShoppingItemPortions = `-- name: UpdateShoppingItemPortions :one
 UPDATE shopping_items
 SET portions_per_unit = $2

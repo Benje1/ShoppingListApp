@@ -36,6 +36,25 @@ func RegisterShoppingListRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(
 		},
 	})
 
+	// POST /shopping/items/update — edit name, category, or portions of a catalogue item
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[sqlc.UpdateShoppingItemParams]{
+		Path: "/items/update", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, sqlc.UpdateShoppingItemParams) (any, error) {
+			return func(r *http.Request, input sqlc.UpdateShoppingItemParams) (any, error) {
+				idStr := r.URL.Query().Get("item_id")
+				if idStr == "" {
+					return nil, fmt.Errorf("missing item_id query param")
+				}
+				var id int32
+				if _, err := fmt.Sscan(idStr, &id); err != nil {
+					return nil, fmt.Errorf("invalid item_id: %w", err)
+				}
+				input.ID = id
+				return updateItemInList(r.Context(), db, input)
+			}
+		},
+	})
+
 	// POST /shopping/items/seed
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "/items/seed", Method: "POST", Public: false,
@@ -414,6 +433,11 @@ func getItemsFromList(ctx context.Context, db *pgxpool.Pool) ([]sqlc.ListShoppin
 func addItemToList(ctx context.Context, db *pgxpool.Pool, params sqlc.CreateShoppingItemParams) (sqlc.ShoppingItem, error) {
 	q := sqlc.New(db)
 	return q.CreateShoppingItem(ctx, params)
+}
+
+func updateItemInList(ctx context.Context, db *pgxpool.Pool, params sqlc.UpdateShoppingItemParams) (sqlc.ShoppingItem, error) {
+	q := sqlc.New(db)
+	return q.UpdateShoppingItem(ctx, params)
 }
 
 func seedShoppingList(ctx context.Context, db *pgxpool.Pool) error {
