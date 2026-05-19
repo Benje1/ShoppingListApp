@@ -35,11 +35,12 @@ type MealResponse struct {
 	DefaultPortions int32  `json:"default_portions"`
 	Season          string `json:"season"` // empty string means no season set
 	// HouseholdID is nil for global/shared meals.
-	HouseholdID *int32               `json:"household_id"`
-	Ingredients []IngredientResponse `json:"ingredients"`
-	Cooks       []CookResponse       `json:"cooks"`
-	Components  []ComponentResponse  `json:"components"` // sub-meals
-	PartOf      []ParentRef          `json:"part_of"`    // composite meals that include this
+	HouseholdID  *int32                     `json:"household_id"`
+	Ingredients  []IngredientResponse       `json:"ingredients"`
+	Cooks        []CookResponse             `json:"cooks"`
+	Components   []ComponentResponse        `json:"components"`  // sub-meals
+	PartOf       []ParentRef                `json:"part_of"`     // composite meals that include this
+	OptionGroups []OptionGroupEntryResponse `json:"option_groups"` // optional choice groups
 }
 
 type MealSummary struct {
@@ -86,8 +87,63 @@ type AddIngredientInput struct {
 	Unit     string  `json:"unit"`
 }
 
+type UpdateIngredientInput struct {
+	ItemID   int32   `json:"item_id"`
+	Quantity float64 `json:"quantity"`
+	Unit     string  `json:"unit"`
+}
+
 type RemoveIngredientInput struct {
 	ItemID int32 `json:"item_id"`
+}
+
+// ── Option groups ──────────────────────────────────────────────────────────────
+// An option group is a named set of choices on a meal. Each entry is either a
+// shopping item (e.g. "chicken breast") or a whole sub-meal (e.g. "mashed
+// potatoes"). The user picks from the group when adding the meal to a plan;
+// their selections are passed as IncludedOptionEntries on SetMealPlanInput.
+//
+// option_type "one_of"  — user picks exactly one entry from the group
+// option_type "many_of" — user picks any subset of entries from the group
+
+// OptionGroupEntryResponse is returned when reading a meal's option groups.
+type OptionGroupEntryResponse struct {
+	ID          int32  `json:"id"`
+	OptionGroup string `json:"option_group"` // user-defined label, e.g. "potatoes", "meat"
+	OptionType  string `json:"option_type"`  // "one_of" | "many_of"
+	SortOrder   int32  `json:"sort_order"`
+	// Set when the entry is a shopping item
+	ItemID   *int32 `json:"item_id,omitempty"`
+	ItemName string `json:"item_name,omitempty"`
+	// Set when the entry is a sub-meal
+	SubMealID   *int32 `json:"sub_meal_id,omitempty"`
+	SubMealName string `json:"sub_meal_name,omitempty"`
+}
+
+// AddOptionGroupEntryInput adds one entry to an option group.
+// Exactly one of ItemID or SubMealID must be non-zero.
+type AddOptionGroupEntryInput struct {
+	OptionGroup string `json:"option_group"`
+	OptionType  string `json:"option_type"`  // "one_of" | "many_of"
+	SortOrder   int32  `json:"sort_order"`
+	ItemID      int32  `json:"item_id"`     // 0 = not set
+	SubMealID   int32  `json:"sub_meal_id"` // 0 = not set
+}
+
+// UpdateOptionGroupEntryInput updates an existing entry by its ID.
+// Exactly one of ItemID or SubMealID must be non-zero.
+type UpdateOptionGroupEntryInput struct {
+	EntryID     int32  `json:"entry_id"`
+	OptionGroup string `json:"option_group"`
+	OptionType  string `json:"option_type"`
+	SortOrder   int32  `json:"sort_order"`
+	ItemID      int32  `json:"item_id"`
+	SubMealID   int32  `json:"sub_meal_id"`
+}
+
+// RemoveOptionGroupEntryInput removes one entry by its ID.
+type RemoveOptionGroupEntryInput struct {
+	EntryID int32 `json:"entry_id"`
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -150,6 +206,7 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 		Cooks:           []CookResponse{},
 		Components:      []ComponentResponse{},
 		PartOf:          []ParentRef{},
+		OptionGroups:    []OptionGroupEntryResponse{},
 	}
 	if meal.Season.Valid {
 		resp.Season = string(meal.Season.Season)
@@ -208,6 +265,10 @@ func getMeal(ctx context.Context, db *pgxpool.Pool, id int32) (*MealResponse, er
 	if err != nil {
 		return nil, err
 	}
+	ogRows, err := q.GetMealOptionGroups(ctx, id)
+	if err != nil {
+		return nil, err
+	}
 	r := buildMealResponse(meal, rows)
 	r.Cooks = make([]CookResponse, len(cookRows))
 	for i, c := range cookRows {
@@ -221,7 +282,36 @@ func getMeal(ctx context.Context, db *pgxpool.Pool, id int32) (*MealResponse, er
 		}
 		r.Cooks[i] = cr
 	}
+	r.OptionGroups = buildOptionGroupResponse(ogRows)
 	return &r, nil
+}
+
+func buildOptionGroupResponse(rows []sqlc.GetMealOptionGroupsRow) []OptionGroupEntryResponse {
+	out := make([]OptionGroupEntryResponse, 0, len(rows))
+	for _, r := range rows {
+		entry := OptionGroupEntryResponse{
+			ID:          r.ID,
+			OptionGroup: r.OptionGroup,
+			OptionType:  r.OptionType,
+			SortOrder:   r.SortOrder,
+		}
+		if r.ShoppingItemID.Valid {
+			id := r.ShoppingItemID.Int32
+			entry.ItemID = &id
+			if r.ItemName.Valid {
+				entry.ItemName = r.ItemName.String
+			}
+		}
+		if r.SubMealID.Valid {
+			id := r.SubMealID.Int32
+			entry.SubMealID = &id
+			if r.SubMealName.Valid {
+				entry.SubMealName = r.SubMealName.String
+			}
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*MealResponse, error) {
@@ -287,6 +377,77 @@ func addIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input Ad
 		return nil, err
 	}
 	return getMeal(ctx, db, mealID)
+}
+
+func updateIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input UpdateIngredientInput) (*MealResponse, error) {
+	q := sqlc.New(db)
+	if _, err := q.UpdateMealIngredient(ctx, sqlc.UpdateMealIngredientParams{
+		MealID:         mealID,
+		ShoppingItemID: input.ItemID,
+		Quantity:       toNumeric(input.Quantity),
+		Unit:           toText(input.Unit),
+	}); err != nil {
+		return nil, err
+	}
+	return getMeal(ctx, db, mealID)
+}
+
+// ── Option group CRUD ─────────────────────────────────────────────────────────
+
+func getOptionGroups(ctx context.Context, db *pgxpool.Pool, mealID int32) ([]OptionGroupEntryResponse, error) {
+	q := sqlc.New(db)
+	rows, err := q.GetMealOptionGroups(ctx, mealID)
+	if err != nil {
+		return nil, err
+	}
+	return buildOptionGroupResponse(rows), nil
+}
+
+func addOptionGroupEntry(ctx context.Context, db *pgxpool.Pool, mealID int32, input AddOptionGroupEntryInput) ([]OptionGroupEntryResponse, error) {
+	if (input.ItemID == 0) == (input.SubMealID == 0) {
+		return nil, fmt.Errorf("exactly one of item_id or sub_meal_id must be set")
+	}
+	q := sqlc.New(db)
+	if _, err := q.AddMealOptionGroupEntry(ctx, sqlc.AddMealOptionGroupEntryParams{
+		MealID:         mealID,
+		OptionGroup:    input.OptionGroup,
+		OptionType:     input.OptionType,
+		SortOrder:      input.SortOrder,
+		ShoppingItemID: nullableInt4(input.ItemID),
+		SubMealID:      nullableInt4(input.SubMealID),
+	}); err != nil {
+		return nil, err
+	}
+	return getOptionGroups(ctx, db, mealID)
+}
+
+func updateOptionGroupEntry(ctx context.Context, db *pgxpool.Pool, mealID int32, input UpdateOptionGroupEntryInput) ([]OptionGroupEntryResponse, error) {
+	if (input.ItemID == 0) == (input.SubMealID == 0) {
+		return nil, fmt.Errorf("exactly one of item_id or sub_meal_id must be set")
+	}
+	q := sqlc.New(db)
+	if _, err := q.UpdateMealOptionGroupEntry(ctx, sqlc.UpdateMealOptionGroupEntryParams{
+		ID:             input.EntryID,
+		OptionGroup:    input.OptionGroup,
+		OptionType:     input.OptionType,
+		SortOrder:      input.SortOrder,
+		ShoppingItemID: nullableInt4(input.ItemID),
+		SubMealID:      nullableInt4(input.SubMealID),
+	}); err != nil {
+		return nil, err
+	}
+	return getOptionGroups(ctx, db, mealID)
+}
+
+func removeOptionGroupEntry(ctx context.Context, db *pgxpool.Pool, mealID int32, input RemoveOptionGroupEntryInput) ([]OptionGroupEntryResponse, error) {
+	q := sqlc.New(db)
+	if err := q.RemoveMealOptionGroupEntry(ctx, sqlc.RemoveMealOptionGroupEntryParams{
+		ID:     input.EntryID,
+		MealID: mealID,
+	}); err != nil {
+		return nil, err
+	}
+	return getOptionGroups(ctx, db, mealID)
 }
 
 func removeIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input RemoveIngredientInput) (*MealResponse, error) {
@@ -388,11 +549,16 @@ type MealPlanDayResponse struct {
 }
 
 type SetMealPlanInput struct {
-	DayName     string `json:"day_name"`
-	MealID      int32  `json:"meal_id"`
-	CookUserID  int32  `json:"cook_user_id"` // 0 = no cook assigned
-	Scope       string `json:"scope"`
-	HouseholdID int32  `json:"household_id"`
+	DayName     string  `json:"day_name"`
+	MealID      int32   `json:"meal_id"`
+	CookUserID  int32   `json:"cook_user_id"` // 0 = no cook assigned
+	Scope       string  `json:"scope"`
+	HouseholdID int32   `json:"household_id"`
+	// IncludedOptionEntries lists the IDs of option group entries the user has
+	// chosen to include when adding this meal to the plan. Each ID corresponds
+	// to a row in meal_option_group_entries. Required entries (no option group)
+	// are always added regardless.
+	IncludedOptionEntries []int32 `json:"included_option_entries"`
 }
 
 type ClearMealPlanInput struct {
@@ -479,7 +645,7 @@ func setMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, input S
 			day.DefaultPortions = meal.DefaultPortions
 		}
 		// Add all meal ingredients (including sub-meals) to the shopping list
-		if addErr := addMealIngredientsToShoppingList(ctx, db, id, hid, uid); addErr != nil {
+		if addErr := addMealIngredientsToShoppingList(ctx, db, id, hid, uid, input.IncludedOptionEntries); addErr != nil {
 			// Non-fatal — plan was saved, log and continue
 			logger.Warn("meal plan: could not add ingredients to shopping list", "err", addErr)
 		}
@@ -491,14 +657,26 @@ func setMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, input S
 // sub-meal components (recursively) and upserts them onto the shopping list.
 // Quantities are rounded up to the nearest integer (ceiling) since the shopping
 // list stores int quantities.
-func addMealIngredientsToShoppingList(ctx context.Context, db *pgxpool.Pool, mealID int32, hid, uid pgtype.Int4) error {
+//
+// includedOptionEntries is the set of meal_option_group_entries IDs the user
+// selected. For each selected entry: if it references a shopping item that item
+// is added; if it references a sub-meal that meal is recursed into. Entries not
+// in this set are skipped entirely.
+func addMealIngredientsToShoppingList(ctx context.Context, db *pgxpool.Pool, mealID int32, hid, uid pgtype.Int4, includedOptionEntries []int32) error {
 	q := sqlc.New(db)
+
+	// Build a fast lookup set of chosen option entry IDs
+	selectedEntries := make(map[int32]bool, len(includedOptionEntries))
+	for _, id := range includedOptionEntries {
+		selectedEntries[id] = true
+	}
 
 	// Accumulate total quantity per item across this meal and all sub-meals
 	totals := make(map[int32]float64)
 
 	var collect func(id int32) error
 	collect = func(id int32) error {
+		// Required ingredients — always included
 		ings, err := q.GetMealWithIngredients(ctx, id)
 		if err != nil {
 			return err
@@ -510,7 +688,28 @@ func addMealIngredientsToShoppingList(ctx context.Context, db *pgxpool.Pool, mea
 			}
 			totals[ing.ShoppingItemID] += qty
 		}
-		// Recurse into sub-meals
+
+		// Option group entries — only included when the user selected them
+		ogRows, err := q.GetMealOptionGroups(ctx, id)
+		if err != nil {
+			return err
+		}
+		for _, og := range ogRows {
+			if !selectedEntries[og.ID] {
+				continue
+			}
+			if og.ShoppingItemID.Valid {
+				// Entry is a shopping item — add it directly
+				totals[og.ShoppingItemID.Int32] += 1
+			} else if og.SubMealID.Valid {
+				// Entry is a sub-meal — recurse into it to collect its ingredients
+				if err := collect(og.SubMealID.Int32); err != nil {
+					return err
+				}
+			}
+		}
+
+		// Recurse into fixed sub-meal components
 		components, err := q.GetMealComponents(ctx, id)
 		if err != nil {
 			return err

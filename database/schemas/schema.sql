@@ -134,6 +134,24 @@ CREATE TABLE meal_components (
 
 CREATE INDEX idx_meal_components_sub ON meal_components(sub_meal_id);
 
+CREATE TABLE meal_option_group_entries (
+    id               SERIAL PRIMARY KEY,
+    meal_id          INT  NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
+    option_group     TEXT NOT NULL,
+    option_type      TEXT NOT NULL CHECK (option_type IN ('one_of', 'many_of')),
+    sort_order       INT  NOT NULL DEFAULT 0,
+    shopping_item_id INT  REFERENCES shopping_items(id) ON DELETE CASCADE,
+    sub_meal_id      INT  REFERENCES meals(id)          ON DELETE CASCADE,
+    CHECK (
+        (shopping_item_id IS NOT NULL AND sub_meal_id IS NULL) OR
+        (shopping_item_id IS NULL     AND sub_meal_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX idx_moge_meal     ON meal_option_group_entries(meal_id);
+CREATE INDEX idx_moge_sub_meal ON meal_option_group_entries(sub_meal_id);
+CREATE INDEX idx_moge_item     ON meal_option_group_entries(shopping_item_id);
+
 -- meal_plan uses two partial unique indexes per scope (household / user),
 -- each including week_start so multiple weeks can coexist (migration 010).
 CREATE TABLE meal_plan (

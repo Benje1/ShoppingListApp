@@ -162,6 +162,16 @@ type MealIngredient struct {
 	Unit           pgtype.Text    `json:"unit"`
 }
 
+type MealOptionGroupEntry struct {
+	ID             int32       `json:"id"`
+	MealID         int32       `json:"meal_id"`
+	OptionGroup    string      `json:"option_group"`
+	OptionType     string      `json:"option_type"`
+	SortOrder      int32       `json:"sort_order"`
+	ShoppingItemID pgtype.Int4 `json:"shopping_item_id"`
+	SubMealID      pgtype.Int4 `json:"sub_meal_id"`
+}
+
 type MealPlan struct {
 	ID      int32  `json:"id"`
 	DayName string `json:"day_name"`
