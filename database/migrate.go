@@ -25,12 +25,12 @@ func newMigrator() (*migrate.Migrate, error) {
 
 	sourceDriver, err := iofs.New(migrationFiles, "migrations")
 	if err != nil {
-		return nil, fmt.Errorf("creating migration source: %w", err)
+		return nil, logger.WithStack(fmt.Errorf("creating migration source: %w", err))
 	}
 
 	m, err := migrate.NewWithSourceInstance("iofs", sourceDriver, dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("creating migrator: %w", err)
+		return nil, logger.WithStack(fmt.Errorf("creating migrator: %w", err))
 	}
 
 	return m, nil
@@ -46,7 +46,7 @@ func RunMigrations(_ context.Context) error {
 	defer m.Close()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("running migrations: %w", err)
+		return logger.WithStack(fmt.Errorf("running migrations: %w", err))
 	}
 
 	return nil
@@ -64,7 +64,7 @@ func ForceVersion(version int) error {
 	defer m.Close()
 
 	if err := m.Force(version); err != nil {
-		return fmt.Errorf("forcing version %d: %w", version, err)
+		return logger.WithStack(fmt.Errorf("forcing version %d: %w", version, err))
 	}
 
 	logger.Info("forced migration version, dirty flag cleared", "version", version)

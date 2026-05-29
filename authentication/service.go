@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"weekly-shopping-app/database"
+	"weekly-shopping-app/internal/logger"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
@@ -22,11 +23,11 @@ type SafeUser struct {
 func LoginService(ctx context.Context, repo database.UserRepository, username, password string) (*SafeUser, error) {
 	user, err := repo.GetUserByUsername(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("invalid username or password, (1): %w", err)
+		return nil, logger.WithStack(fmt.Errorf("invalid username or password, (1): %w", err))
 	}
 
 	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, fmt.Errorf("invalid username or password, (2): %w", err)
+		return nil, logger.WithStack(fmt.Errorf("invalid username or password, (2): %w", err))
 	}
 
 	// Households is returned from the DB as a JSON array (interface{}).
@@ -35,10 +36,10 @@ func LoginService(ctx context.Context, repo database.UserRepository, username, p
 	if user.Households != nil {
 		raw, err := json.Marshal(user.Households)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal households: %w", err)
+			return nil, logger.WithStack(fmt.Errorf("failed to marshal households: %w", err))
 		}
 		if err := json.Unmarshal(raw, &households); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal households: %w", err)
+			return nil, logger.WithStack(fmt.Errorf("failed to unmarshal households: %w", err))
 		}
 	}
 

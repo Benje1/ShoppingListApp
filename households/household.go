@@ -9,6 +9,7 @@ import (
 
 	"weekly-shopping-app/database"
 	sqlc "weekly-shopping-app/database/sqlc"
+	"weekly-shopping-app/internal/logger"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -106,11 +107,11 @@ func createHousehold(ctx context.Context, db *pgxpool.Pool, creatorUserID int32,
 	}
 	h, err := repo(db).InsertHousehold(ctx, np, input.Name)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	// Automatically add the creator as the first member of the household
 	if err := userRepo(db).AddUserToHousehold(ctx, creatorUserID, h.HouseholdID); err != nil {
-		return nil, fmt.Errorf("adding creator to household: %w", err)
+		return nil, logger.WithStack(fmt.Errorf("adding creator to household: %w", err))
 	}
 	r := householdResponse(h)
 	return &r, nil
@@ -119,7 +120,7 @@ func createHousehold(ctx context.Context, db *pgxpool.Pool, creatorUserID int32,
 func getHousehold(ctx context.Context, db *pgxpool.Pool, id int32) (*HouseholdResponse, error) {
 	h, err := repo(db).GetHousehold(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	r := householdResponse(h)
 	return &r, nil
@@ -129,15 +130,15 @@ func getHouseholdDetail(ctx context.Context, db *pgxpool.Pool, id int32) (*House
 	r := repo(db)
 	h, err := r.GetHousehold(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	members, err := r.GetHouseholdMembers(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	pending, err := r.GetPendingInvites(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 
 	ms := make([]MemberResponse, len(members))
@@ -168,7 +169,7 @@ func renameHousehold(ctx context.Context, db *pgxpool.Pool, id int32, input Rena
 	}
 	h, err := repo(db).RenameHousehold(ctx, id, input.Name)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	r := householdResponse(h)
 	return &r, nil
@@ -194,7 +195,7 @@ func requestJoin(ctx context.Context, db *pgxpool.Pool, userID int32, input Requ
 	// Create a new invite request from this user for that household
 	inv, err := repo(db).CreateInvite(ctx, existing.HouseholdID, input.InviteCode, userID)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return &InviteResponse{
 		InviteID:    inv.ID,
@@ -213,7 +214,7 @@ func generateInviteCode(ctx context.Context, db *pgxpool.Pool, householdID int32
 	}
 	inv, err := repo(db).CreateInvite(ctx, householdID, code, requestingUserID)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return &InviteResponse{
 		InviteID:    inv.ID,
@@ -243,13 +244,13 @@ func respondToInvite(ctx context.Context, db *pgxpool.Pool, input RespondToInvit
 		status = "approved"
 		// Add the requesting user to the household
 		if err := userRepo(db).AddUserToHousehold(ctx, inv.RequestedByUserID, inv.HouseholdID); err != nil {
-			return nil, fmt.Errorf("adding user to household: %w", err)
+			return nil, logger.WithStack(fmt.Errorf("adding user to household: %w", err))
 		}
 	}
 
 	updated, err := repo(db).RespondToInvite(ctx, inv.ID, status)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return &InviteResponse{
 		InviteID:    updated.ID,

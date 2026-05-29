@@ -224,7 +224,7 @@ func listMeals(ctx context.Context, db *pgxpool.Pool, householdID pgtype.Int4) (
 	q := sqlc.New(db)
 	rows, err := q.ListMealsWithIngredientCount(ctx, householdID)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	out := make([]MealSummary, len(rows))
 	for i, r := range rows {
@@ -255,19 +255,19 @@ func getMeal(ctx context.Context, db *pgxpool.Pool, id int32) (*MealResponse, er
 	q := sqlc.New(db)
 	meal, err := q.GetMeal(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	rows, err := q.GetMealWithIngredients(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	cookRows, err := q.GetMealCooks(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	ogRows, err := q.GetMealOptionGroups(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	r := buildMealResponse(meal, rows)
 	r.Cooks = make([]CookResponse, len(cookRows))
@@ -327,7 +327,7 @@ func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*
 		HouseholdID:     nullableInt4(input.HouseholdID),
 	})
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	// Add any ingredients provided at creation time
 	for _, ing := range input.Ingredients {
@@ -337,7 +337,7 @@ func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*
 			Quantity:       toNumeric(ing.Quantity),
 			Unit:           toText(ing.Unit),
 		}); err != nil {
-			return nil, fmt.Errorf("adding ingredient %d: %w", ing.ItemID, err)
+			return nil, logger.WithStack(fmt.Errorf("adding ingredient %d: %w", ing.ItemID, err))
 		}
 	}
 	return getMealFull(ctx, db, meal.ID)
@@ -356,7 +356,7 @@ func updateMeal(ctx context.Context, db *pgxpool.Pool, id int32, input UpdateMea
 		Season:          toNullSeason(input.Season),
 		HouseholdID:     nullableInt4(input.HouseholdID),
 	}); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return getMealFull(ctx, db, id)
 }
@@ -398,7 +398,7 @@ func getOptionGroups(ctx context.Context, db *pgxpool.Pool, mealID int32) ([]Opt
 	q := sqlc.New(db)
 	rows, err := q.GetMealOptionGroups(ctx, mealID)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return buildOptionGroupResponse(rows), nil
 }
@@ -416,7 +416,7 @@ func addOptionGroupEntry(ctx context.Context, db *pgxpool.Pool, mealID int32, in
 		ShoppingItemID: nullableInt4(input.ItemID),
 		SubMealID:      nullableInt4(input.SubMealID),
 	}); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return getOptionGroups(ctx, db, mealID)
 }
@@ -434,7 +434,7 @@ func updateOptionGroupEntry(ctx context.Context, db *pgxpool.Pool, mealID int32,
 		ShoppingItemID: nullableInt4(input.ItemID),
 		SubMealID:      nullableInt4(input.SubMealID),
 	}); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return getOptionGroups(ctx, db, mealID)
 }
@@ -445,7 +445,7 @@ func removeOptionGroupEntry(ctx context.Context, db *pgxpool.Pool, mealID int32,
 		ID:     input.EntryID,
 		MealID: mealID,
 	}); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return getOptionGroups(ctx, db, mealID)
 }
@@ -456,7 +456,7 @@ func removeIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input
 		MealID:         mealID,
 		ShoppingItemID: input.ItemID,
 	}); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return getMeal(ctx, db, mealID)
 }
@@ -476,7 +476,7 @@ func getMealCooks(ctx context.Context, db *pgxpool.Pool, mealID int32) ([]CookRe
 	q := sqlc.New(db)
 	rows, err := q.GetMealCooks(ctx, mealID)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	out := make([]CookResponse, len(rows))
 	for i, r := range rows {
@@ -500,7 +500,7 @@ func addMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32, ho
 		UserID:      userID,
 		HouseholdID: householdID,
 	}); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return getMealCooks(ctx, db, mealID)
 }
@@ -512,7 +512,7 @@ func removeMealCook(ctx context.Context, db *pgxpool.Pool, mealID, userID int32,
 		UserID:  userID,
 		Column3: householdID.Int32,
 	}); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return getMealCooks(ctx, db, mealID)
 }
@@ -524,7 +524,7 @@ func getMealsForCook(ctx context.Context, db *pgxpool.Pool, userID int32, househ
 		HouseholdID: householdID,
 	})
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	out := make([]MealSummary, len(rows))
 	for i, r := range rows {
@@ -588,7 +588,7 @@ func getMealPlanFull(ctx context.Context, db *pgxpool.Pool, userID, householdID 
 		UserID:      pgtype.Int4{Int32: userID, Valid: true},
 	})
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	out := make([]MealPlanDayResponse, 0, len(rows))
 	for _, r := range rows {
@@ -629,7 +629,7 @@ func setMealPlanDay(ctx context.Context, db *pgxpool.Pool, userID int32, input S
 		UserID:      uid,
 	})
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	day := &MealPlanDayResponse{DayName: result.DayName}
 	if result.MealID.Valid {
@@ -740,7 +740,7 @@ func addMealIngredientsToShoppingList(ctx context.Context, db *pgxpool.Pool, mea
 			UserID:         uid,
 		})
 		if err != nil {
-			return fmt.Errorf("adding item %d to shopping list: %w", itemID, err)
+			return logger.WithStack(fmt.Errorf("adding item %d to shopping list: %w", itemID, err))
 		}
 	}
 	return nil
@@ -786,7 +786,7 @@ func getComponents(ctx context.Context, db *pgxpool.Pool, parentID int32) ([]Com
 	q := sqlc.New(db)
 	rows, err := q.GetMealComponents(ctx, parentID)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	out := make([]ComponentResponse, len(rows))
 	for i, r := range rows {
@@ -813,7 +813,7 @@ func addComponent(ctx context.Context, db *pgxpool.Pool, parentID int32, input A
 	q := sqlc.New(db)
 	existing, err := q.GetMealComponents(ctx, input.SubMealID)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	for _, c := range existing {
 		if c.ID == parentID {
@@ -821,7 +821,7 @@ func addComponent(ctx context.Context, db *pgxpool.Pool, parentID int32, input A
 		}
 	}
 	if err := q.AddMealComponent(ctx, sqlc.AddMealComponentParams{ParentMealID: parentID, SubMealID: input.SubMealID, SortOrder: input.SortOrder}); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return getComponents(ctx, db, parentID)
 }
@@ -829,7 +829,7 @@ func addComponent(ctx context.Context, db *pgxpool.Pool, parentID int32, input A
 func removeComponent(ctx context.Context, db *pgxpool.Pool, parentID int32, input RemoveComponentInput) ([]ComponentResponse, error) {
 	q := sqlc.New(db)
 	if err := q.RemoveMealComponent(ctx, sqlc.RemoveMealComponentParams{ParentMealID: parentID, SubMealID: input.SubMealID}); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return getComponents(ctx, db, parentID)
 }
@@ -838,18 +838,18 @@ func removeComponent(ctx context.Context, db *pgxpool.Pool, parentID int32, inpu
 func getMealFull(ctx context.Context, db *pgxpool.Pool, id int32) (*MealResponse, error) {
 	meal, err := getMeal(ctx, db, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	// Components (sub-meals)
 	comps, err := getComponents(ctx, db, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	meal.Components = comps
 	// Parent meals that use this meal as a component
 	parents, err := sqlc.New(db).GetParentMeals(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	meal.PartOf = make([]ParentRef, len(parents))
 	for i, p := range parents {

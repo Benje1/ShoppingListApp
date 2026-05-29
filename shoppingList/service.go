@@ -8,6 +8,7 @@ import (
 	"weekly-shopping-app/authentication"
 	sqlc "weekly-shopping-app/database/sqlc"
 	"weekly-shopping-app/internal/api/httpx"
+	"weekly-shopping-app/internal/logger"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -329,19 +330,19 @@ ORDER BY si.item_type, si.name`
 	}
 	rows, err := db.Query(ctx, query, householdIDs, userID)
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	defer rows.Close()
 	var items []sqlc.GetShoppingListRow
 	for rows.Next() {
 		var i sqlc.GetShoppingListRow
 		if err := rows.Scan(&i.ID, &i.ItemID, &i.Name, &i.ItemType, &i.PortionsPerUnit, &i.Quantity, &i.UpdatedAt, &i.Scope); err != nil {
-			return nil, err
+			return nil, logger.WithStack(err)
 		}
 		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	if items == nil {
 		return []sqlc.GetShoppingListRow{}, nil
@@ -356,7 +357,7 @@ func getShoppingListUpdatedAt(ctx context.Context, db *pgxpool.Pool, userID int3
 	}
 	var raw interface{}
 	if err := db.QueryRow(ctx, query, householdIDs, userID).Scan(&raw); err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	result := map[string]any{"last_updated": nil}
 	if t, ok := raw.(pgtype.Timestamp); ok && t.Valid {
@@ -471,7 +472,7 @@ func getHaveIt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32)
 	q := sqlc.New(db)
 	rows, err := q.GetHaveIt(ctx, haveItParams(userID, householdID))
 	if err != nil {
-		return HaveItResponse{}, err
+		return HaveItResponse{}, logger.WithStack(err)
 	}
 	ids := make([]int32, 0, len(rows))
 	for _, r := range rows {
@@ -479,7 +480,7 @@ func getHaveIt(ctx context.Context, db *pgxpool.Pool, userID, householdID int32)
 	}
 	ts, err := q.GetHaveItUpdatedAt(ctx, haveItUpdatedAtParams(userID, householdID))
 	if err != nil {
-		return HaveItResponse{}, err
+		return HaveItResponse{}, logger.WithStack(err)
 	}
 	var lastUpdated *string
 	if t, ok := ts.(pgtype.Timestamp); ok && t.Valid {
@@ -498,7 +499,7 @@ func markHaveIt(ctx context.Context, db *pgxpool.Pool, userID int32, input HaveI
 		UserID:         uid,
 	})
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return map[string]any{"status": "marked"}, nil
 }
@@ -512,7 +513,7 @@ func unmarkHaveIt(ctx context.Context, db *pgxpool.Pool, userID int32, input Hav
 		UserID:         uid,
 	})
 	if err != nil {
-		return nil, err
+		return nil, logger.WithStack(err)
 	}
 	return map[string]any{"status": "unmarked"}, nil
 }
