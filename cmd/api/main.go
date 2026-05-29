@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"weekly-shopping-app/authentication"
@@ -32,7 +34,8 @@ func main() {
 		panic(fmt.Sprintf("logger init failed: %v", err))
 	}
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// Recovery mode: clear a dirty migration version and exit.
 	if *forceMigration >= 0 {
@@ -65,8 +68,8 @@ func main() {
 
 	handler := middleware.MiddlewareWrapper(mux)
 
-	// Background jobs
-	startBackgroundTasks(pool)
+	// Background jobs — pass ctx so they stop cleanly on shutdown.
+	startBackgroundTasks(ctx, pool)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -88,10 +91,10 @@ func main() {
 	}
 }
 
-func startBackgroundTasks(pool *pgxpool.Pool) {
-	authentication.StartSessionCleanup()
-	pantry.StartExpiryScheduler(pool)
-	meals.StartWeekScheduler(pool)
+func startBackgroundTasks(ctx context.Context, pool *pgxpool.Pool) {
+	authentication.StartSessionCleanup(ctx)
+	pantry.StartExpiryScheduler(ctx, pool)
+	meals.StartWeekScheduler(ctx, pool)
 }
 
 func loadEnv() {

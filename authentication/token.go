@@ -287,11 +287,20 @@ func RequireAuth(next http.Handler) http.Handler {
 }
 
 // StartSessionCleanup periodically deletes expired sessions from Postgres.
-func StartSessionCleanup() {
+// It stops when ctx is cancelled.
+func StartSessionCleanup(ctx context.Context) {
 	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
 		for {
-			time.Sleep(10 * time.Minute)
-			pool.Exec(context.Background(), `DELETE FROM sessions WHERE expires_at < now()`)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`); err != nil && ctx.Err() == nil {
+					slog.Error("session cleanup failed", "error", err)
+				}
+			}
 		}
 	}()
 }
