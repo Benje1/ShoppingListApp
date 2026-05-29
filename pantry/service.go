@@ -50,7 +50,7 @@ func RegisterPantryRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
 				var id int32
-				if _, err := fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id); err != nil || id == 0 {
+				if _, err := fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id); err != nil || id <= 0 {
 					return nil, fmt.Errorf("valid id required")
 				}
 				return map[string]string{"status": "removed"}, removePantryItem(r.Context(), db, id)
@@ -87,7 +87,7 @@ func RegisterPantryRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.
 		Handler: func(db *pgxpool.Pool) func(*http.Request, SetShelfLifeInput) (any, error) {
 			return func(r *http.Request, input SetShelfLifeInput) (any, error) {
 				var itemID int32
-				if _, err := fmt.Sscanf(r.URL.Query().Get("item_id"), "%d", &itemID); err != nil || itemID == 0 {
+				if _, err := fmt.Sscanf(r.URL.Query().Get("item_id"), "%d", &itemID); err != nil || itemID <= 0 {
 					return nil, fmt.Errorf("valid item_id required")
 				}
 				return setShelfLife(r.Context(), db, itemID, input)

@@ -219,7 +219,7 @@ func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 
 func queryID(r *http.Request) (int32, error) {
 	var id int32
-	if _, err := fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id); err != nil || id == 0 {
+	if _, err := fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id); err != nil || id <= 0 {
 		return 0, fmt.Errorf("valid id query parameter is required")
 	}
 	return id, nil
