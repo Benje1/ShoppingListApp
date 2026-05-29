@@ -28,13 +28,20 @@ import (
 
 // StartWeekScheduler starts the background goroutine that keeps two weeks of
 // meal plan rows populated for every scope with repeating assignments.
-func StartWeekScheduler(db *pgxpool.Pool) {
+// It stops when ctx is cancelled.
+func StartWeekScheduler(ctx context.Context, db *pgxpool.Pool) {
 	go func() {
 		runGeneration(db)
 
 		for {
-			time.Sleep(durationUntilNextMonday())
-			runGeneration(db)
+			timer := time.NewTimer(durationUntilNextMonday())
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+				runGeneration(db)
+			}
 		}
 	}()
 }

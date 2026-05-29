@@ -163,9 +163,10 @@ func setMealPlanDayV2(ctx context.Context, db *pgxpool.Pool, userID int32, input
 		return nil, err
 	}
 
-	// If an effective meal was resolved, sync ingredients to shopping list
+	// If an effective meal was resolved, sync ingredients to shopping list.
+	// Repeating plans have no user selection for option groups, so none are included.
 	if effectiveMealID != 0 {
-		if addErr := addMealIngredientsToShoppingList(ctx, db, effectiveMealID, hid, uid); addErr != nil {
+		if addErr := addMealIngredientsToShoppingList(ctx, db, effectiveMealID, hid, uid, nil); addErr != nil {
 			logger.Warn("meal plan v2: could not sync ingredients", "err", addErr)
 		}
 	}

@@ -120,9 +120,8 @@ func RegisterShoppingListRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(
 		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
 				var id int32
-				fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id)
-				if id == 0 {
-					return nil, fmt.Errorf("id is required")
+				if _, err := fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id); err != nil || id <= 0 {
+					return nil, fmt.Errorf("valid id query parameter is required")
 				}
 				q := sqlc.New(db)
 				if err := q.RemoveFromShoppingList(r.Context(), id); err != nil {

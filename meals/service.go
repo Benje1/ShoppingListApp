@@ -101,6 +101,20 @@ func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 		},
 	})
 
+	// POST /meals/ingredient/update?id=<meal_id> — update quantity, unit, or optional flag for an existing ingredient
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[UpdateIngredientInput]{
+		Path: "/ingredient/update", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, UpdateIngredientInput) (any, error) {
+			return func(r *http.Request, input UpdateIngredientInput) (any, error) {
+				id, err := queryID(r)
+				if err != nil {
+					return nil, err
+				}
+				return updateIngredient(r.Context(), db, id, input)
+			}
+		},
+	})
+
 	// POST /meals/ingredient/remove?id=<meal_id>
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[RemoveIngredientInput]{
 		Path: "/ingredient/remove", Method: "POST", Public: false,
@@ -145,11 +159,67 @@ func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 			}
 		},
 	})
+
+	// GET /meals/option-group?id=<meal_id> — list all option group entries for a meal
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path: "/option-group", Method: "GET", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(r *http.Request, _ struct{}) (any, error) {
+				id, err := queryID(r)
+				if err != nil {
+					return nil, err
+				}
+				return getOptionGroups(r.Context(), db, id)
+			}
+		},
+	})
+
+	// POST /meals/option-group/add?id=<meal_id>
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[AddOptionGroupEntryInput]{
+		Path: "/option-group/add", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, AddOptionGroupEntryInput) (any, error) {
+			return func(r *http.Request, input AddOptionGroupEntryInput) (any, error) {
+				id, err := queryID(r)
+				if err != nil {
+					return nil, err
+				}
+				return addOptionGroupEntry(r.Context(), db, id, input)
+			}
+		},
+	})
+
+	// POST /meals/option-group/update?id=<meal_id>
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[UpdateOptionGroupEntryInput]{
+		Path: "/option-group/update", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, UpdateOptionGroupEntryInput) (any, error) {
+			return func(r *http.Request, input UpdateOptionGroupEntryInput) (any, error) {
+				id, err := queryID(r)
+				if err != nil {
+					return nil, err
+				}
+				return updateOptionGroupEntry(r.Context(), db, id, input)
+			}
+		},
+	})
+
+	// POST /meals/option-group/remove?id=<meal_id>
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[RemoveOptionGroupEntryInput]{
+		Path: "/option-group/remove", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, RemoveOptionGroupEntryInput) (any, error) {
+			return func(r *http.Request, input RemoveOptionGroupEntryInput) (any, error) {
+				id, err := queryID(r)
+				if err != nil {
+					return nil, err
+				}
+				return removeOptionGroupEntry(r.Context(), db, id, input)
+			}
+		},
+	})
 }
 
 func queryID(r *http.Request) (int32, error) {
 	var id int32
-	if _, err := fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id); err != nil || id == 0 {
+	if _, err := fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id); err != nil || id <= 0 {
 		return 0, fmt.Errorf("valid id query parameter is required")
 	}
 	return id, nil
@@ -254,10 +324,12 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 				if err != nil {
 					return nil, err
 				}
-				var userID int32
-				fmt.Sscanf(r.URL.Query().Get("user_id"), "%d", &userID)
-				if userID == 0 {
-					userID = sess.UserID
+				userID := sess.UserID
+				if raw := r.URL.Query().Get("user_id"); raw != "" {
+					var parsed int32
+					if _, err := fmt.Sscanf(raw, "%d", &parsed); err == nil && parsed > 0 {
+						userID = parsed
+					}
 				}
 				householdID := pgtype.Int4{
 					Int32: sess.FirstHouseholdID(),

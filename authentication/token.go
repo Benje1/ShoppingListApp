@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -14,6 +15,18 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// sessionTTL returns the session lifetime from SESSION_TTL_HOURS env var,
+// defaulting to 168 hours (7 days).
+func sessionTTL() time.Duration {
+	if raw := os.Getenv("SESSION_TTL_HOURS"); raw != "" {
+		var hours int
+		if _, err := fmt.Sscanf(raw, "%d", &hours); err == nil && hours > 0 {
+			return time.Duration(hours) * time.Hour
+		}
+	}
+	return 7 * 24 * time.Hour
+}
 
 // contextKey is an unexported type for context keys in this package.
 type contextKey string
@@ -74,18 +87,24 @@ func (s Session) HasHousehold(id int32) bool {
 	return false
 }
 
-func newSessionID() string {
+func newSessionID() (string, error) {
 	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // CreateSession persists a new session (to Postgres when configured, or to an
 // in-memory store when pool is nil — used by unit tests), sets the cookie, and
 // returns the raw session ID so the caller can include it in the response body.
 func CreateSession(w http.ResponseWriter, username string, userID int32, householdIds []int32) string {
-	sessionID := newSessionID()
-	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+	sessionID, err := newSessionID()
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return ""
+	}
+	expiresAt := time.Now().Add(sessionTTL())
 
 	if pool == nil {
 		// In-memory fallback (used by unit tests that don't have a DB).
@@ -146,7 +165,9 @@ func DestroySession(w http.ResponseWriter, r *http.Request) {
 			delete(inMemorySessions.data, token)
 			inMemorySessions.Unlock()
 		} else {
-			pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, token)
+			if _, err := pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, token); err != nil {
+				slog.Error("failed to delete session", "error", err)
+			}
 		}
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -211,7 +232,9 @@ func getSession(r *http.Request) (Session, bool) {
 	}
 
 	if time.Now().After(expiresAt) {
-		pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, token)
+		if _, err := pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, token); err != nil {
+			slog.Error("failed to delete expired session", "error", err)
+		}
 		return Session{}, false
 	}
 
@@ -276,11 +299,20 @@ func RequireAuth(next http.Handler) http.Handler {
 }
 
 // StartSessionCleanup periodically deletes expired sessions from Postgres.
-func StartSessionCleanup() {
+// It stops when ctx is cancelled.
+func StartSessionCleanup(ctx context.Context) {
 	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
 		for {
-			time.Sleep(10 * time.Minute)
-			pool.Exec(context.Background(), `DELETE FROM sessions WHERE expires_at < now()`)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`); err != nil && ctx.Err() == nil {
+					slog.Error("session cleanup failed", "error", err)
+				}
+			}
 		}
 	}()
 }
