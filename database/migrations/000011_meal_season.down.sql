@@ -1,4 +1,0 @@
-ALTER TABLE meals
-    DROP COLUMN IF EXISTS season;
-
-DROP TYPE IF EXISTS season;
