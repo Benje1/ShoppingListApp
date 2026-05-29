@@ -74,17 +74,23 @@ func (s Session) HasHousehold(id int32) bool {
 	return false
 }
 
-func newSessionID() string {
+func newSessionID() (string, error) {
 	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // CreateSession persists a new session (to Postgres when configured, or to an
 // in-memory store when pool is nil — used by unit tests), sets the cookie, and
 // returns the raw session ID so the caller can include it in the response body.
 func CreateSession(w http.ResponseWriter, username string, userID int32, householdIds []int32) string {
-	sessionID := newSessionID()
+	sessionID, err := newSessionID()
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return ""
+	}
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
 
 	if pool == nil {
