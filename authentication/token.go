@@ -16,6 +16,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// sessionTTL returns the session lifetime from SESSION_TTL_HOURS env var,
+// defaulting to 168 hours (7 days).
+func sessionTTL() time.Duration {
+	if raw := os.Getenv("SESSION_TTL_HOURS"); raw != "" {
+		var hours int
+		if _, err := fmt.Sscanf(raw, "%d", &hours); err == nil && hours > 0 {
+			return time.Duration(hours) * time.Hour
+		}
+	}
+	return 7 * 24 * time.Hour
+}
+
 // contextKey is an unexported type for context keys in this package.
 type contextKey string
 
@@ -92,7 +104,7 @@ func CreateSession(w http.ResponseWriter, username string, userID int32, househo
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return ""
 	}
-	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+	expiresAt := time.Now().Add(sessionTTL())
 
 	if pool == nil {
 		// In-memory fallback (used by unit tests that don't have a DB).

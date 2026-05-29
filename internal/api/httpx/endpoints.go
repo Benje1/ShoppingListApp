@@ -15,7 +15,7 @@ func Endpoint[T any](
 	return func(w http.ResponseWriter, r *http.Request) (any, error) {
 
 		if r.Method != method {
-			return nil, errors.New("method not allowed")
+			return nil, NewClientError(errors.New("method not allowed"))
 		}
 
 		var input T
@@ -26,7 +26,7 @@ func Endpoint[T any](
 
 			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-				return nil, errors.New("invalid JSON body")
+				return nil, NewClientError(errors.New("invalid JSON body"))
 			}
 		}
 
@@ -41,7 +41,7 @@ func EndpointWithWriter[T any](
 	return func(w http.ResponseWriter, r *http.Request) (any, error) {
 
 		if r.Method != method {
-			return nil, errors.New("method not allowed")
+			return nil, NewClientError(errors.New("method not allowed"))
 		}
 
 		var input T
@@ -52,7 +52,7 @@ func EndpointWithWriter[T any](
 
 			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-				return nil, errors.New("invalid JSON body")
+				return nil, NewClientError(errors.New("invalid JSON body"))
 			}
 		}
 
@@ -79,7 +79,7 @@ func Patch[T any](handler func(r *http.Request, input T) (any, error)) AppHandle
 func Delete(handler func(r *http.Request) (any, error)) AppHandler {
 	return func(w http.ResponseWriter, r *http.Request) (any, error) {
 		if r.Method != http.MethodDelete {
-			return nil, errors.New("method not allowed")
+			return nil, NewClientError(errors.New("method not allowed"))
 		}
 		return handler(r)
 	}
@@ -88,7 +88,7 @@ func Delete(handler func(r *http.Request) (any, error)) AppHandler {
 func Get(handler func(r *http.Request) (any, error)) AppHandler {
 	return func(w http.ResponseWriter, r *http.Request) (any, error) {
 		if r.Method != http.MethodGet {
-			return nil, errors.New("method not allowed")
+			return nil, NewClientError(errors.New("method not allowed"))
 		}
 		return handler(r)
 	}
