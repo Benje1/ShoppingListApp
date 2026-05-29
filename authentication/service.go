@@ -23,23 +23,26 @@ type SafeUser struct {
 func LoginService(ctx context.Context, repo database.UserRepository, username, password string) (*SafeUser, error) {
 	user, err := repo.GetUserByUsername(ctx, username)
 	if err != nil {
-		return nil, logger.WithStack(fmt.Errorf("invalid username or password, (1): %w", err))
+		return nil, logger.WithStack(fmt.Errorf("invalid username or password: %w", err))
 	}
 
 	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, logger.WithStack(fmt.Errorf("invalid username or password, (2): %w", err))
+		return nil, logger.WithStack(fmt.Errorf("invalid username or password: %w", err))
 	}
 
-	// Households is returned from the DB as a JSON array (interface{}).
-	// Marshal it back to bytes so we can unmarshal into the typed slice.
+	// Households is returned from the DB as a JSON []byte (pgx JSON column).
 	var households []database.UserHousehold
 	if user.Households != nil {
-		raw, err := json.Marshal(user.Households)
-		if err != nil {
-			return nil, logger.WithStack(fmt.Errorf("failed to marshal households: %w", err))
+		raw, ok := user.Households.([]byte)
+		if !ok {
+			// Fallback: re-marshal if pgx decoded it to something else (e.g. during tests).
+			var err error
+			if raw, err = json.Marshal(user.Households); err != nil {
+				return nil, logger.WithStack(fmt.Errorf("failed to encode households: %w", err))
+			}
 		}
 		if err := json.Unmarshal(raw, &households); err != nil {
-			return nil, logger.WithStack(fmt.Errorf("failed to unmarshal households: %w", err))
+			return nil, logger.WithStack(fmt.Errorf("failed to decode households: %w", err))
 		}
 	}
 
