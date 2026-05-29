@@ -76,4 +76,43 @@ func logWithCorrectSource(level slog.Level, msg string, args ...any) {
 func Debug(msg string, args ...any) { logWithCorrectSource(slog.LevelDebug, msg, args...) }
 func Info(msg string, args ...any)  { logWithCorrectSource(slog.LevelInfo, msg, args...) }
 func Warn(msg string, args ...any)  { logWithCorrectSource(slog.LevelWarn, msg, args...) }
-func Error(msg string, args ...any) { logWithCorrectSource(slog.LevelError, msg, args...) }
+
+// Error logs at ERROR level. If any value in args is (or wraps) a *StackError,
+// its stack trace is appended automatically as a "stack" attribute.
+func Error(msg string, args ...any) {
+	args = appendStackIfPresent(args)
+	logWithCorrectSource(slog.LevelError, msg, args...)
+}
+
+// appendStackIfPresent scans args for error values that carry a stack trace
+// and appends a "stack" key/value pair when one is found.
+func appendStackIfPresent(args []any) []any {
+	for _, a := range args {
+		if err, ok := a.(error); ok {
+			if se := findStackError(err); se != nil {
+				return append(args, "stack", se.StackTrace())
+			}
+		}
+	}
+	return args
+}
+
+// findStackError walks the error chain looking for a *StackError.
+func findStackError(err error) *StackError {
+	for err != nil {
+		if se, ok := err.(*StackError); ok {
+			return se
+		}
+		err = unwrap(err)
+	}
+	return nil
+}
+
+// unwrap calls Unwrap() if the error implements it, otherwise returns nil.
+func unwrap(err error) error {
+	type unwrapper interface{ Unwrap() error }
+	if u, ok := err.(unwrapper); ok {
+		return u.Unwrap()
+	}
+	return nil
+}
