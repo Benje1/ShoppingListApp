@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -152,7 +153,9 @@ func DestroySession(w http.ResponseWriter, r *http.Request) {
 			delete(inMemorySessions.data, token)
 			inMemorySessions.Unlock()
 		} else {
-			pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, token)
+			if _, err := pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, token); err != nil {
+				slog.Error("failed to delete session", "error", err)
+			}
 		}
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -217,7 +220,9 @@ func getSession(r *http.Request) (Session, bool) {
 	}
 
 	if time.Now().After(expiresAt) {
-		pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, token)
+		if _, err := pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, token); err != nil {
+			slog.Error("failed to delete expired session", "error", err)
+		}
 		return Session{}, false
 	}
 
