@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/database"
@@ -67,8 +68,22 @@ func main() {
 	// Background jobs
 	startBackgroundTasks(pool)
 
-	logger.Info("server listening", "addr", ":8080")
-	if err := http.ListenAndServe(":8080", handler); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	addr := ":" + port
+
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	logger.Info("server listening", "addr", addr)
+	if err := srv.ListenAndServe(); err != nil {
 		logger.Error("server stopped", "err", err)
 	}
 }
