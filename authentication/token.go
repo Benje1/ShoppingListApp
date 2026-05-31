@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"weekly-shopping-app/internal/logger"
 )
 
 // contextKey is an unexported type for context keys in this package.
@@ -112,7 +113,7 @@ func CreateSession(w http.ResponseWriter, username string, userID int32, househo
 			sessionID, userID, username, hids, expiresAt,
 		)
 		if err != nil {
-			fmt.Printf("session insert error: %v\n", err)
+			logger.Error("session insert error", "err", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return ""
 		}

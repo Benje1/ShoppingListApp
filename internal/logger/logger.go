@@ -23,6 +23,13 @@ import (
 	"time"
 )
 
+func resolveLevel() slog.Level {
+	if os.Getenv("ENVIRONMENT") == "production" {
+		return slog.LevelWarn
+	}
+	return slog.LevelDebug
+}
+
 // L is the package-level logger. Call Init before using it; it falls back
 // to a stderr-only logger if Init has not been called.
 var L *slog.Logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -40,7 +47,7 @@ func Init(logDir string) error {
 	multi := io.MultiWriter(os.Stdout, fileWriter)
 
 	opts := &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: resolveLevel(),
 		// Include the source file and line in every record so errors are
 		// trivially traceable without a stack trace.
 		AddSource: true,
