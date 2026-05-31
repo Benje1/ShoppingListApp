@@ -2,6 +2,7 @@ package authentication
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"weekly-shopping-app/database"
@@ -38,8 +39,11 @@ func RegisterRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.AppHan
 		Method: "GET",
 		Handler: func(_ *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
 			return func(r *http.Request, _ struct{}) (any, error) {
-				user := r.Header.Get("X-User")
-				return map[string]string{"message": "Welcome " + user}, nil
+				sess, err := SessionFromContext(r)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]string{"message": fmt.Sprintf("Welcome %s", sess.Username)}, nil
 			}
 		},
 	})

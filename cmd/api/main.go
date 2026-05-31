@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"weekly-shopping-app/authentication"
 	"weekly-shopping-app/database"
@@ -31,7 +34,8 @@ func main() {
 		panic(fmt.Sprintf("logger init failed: %v", err))
 	}
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// Recovery mode: clear a dirty migration version and exit.
 	if *forceMigration >= 0 {
@@ -64,19 +68,33 @@ func main() {
 
 	handler := middleware.MiddlewareWrapper(mux)
 
-	// Background jobs
-	startBackgroundTasks(pool)
+	// Background jobs — pass ctx so they stop cleanly on shutdown.
+	startBackgroundTasks(ctx, pool)
 
-	logger.Info("server listening", "addr", ":8080")
-	if err := http.ListenAndServe(":8080", handler); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	addr := ":" + port
+
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	logger.Info("server listening", "addr", addr)
+	if err := srv.ListenAndServe(); err != nil {
 		logger.Error("server stopped", "err", err)
 	}
 }
 
-func startBackgroundTasks(pool *pgxpool.Pool) {
-	authentication.StartSessionCleanup()
-	pantry.StartExpiryScheduler(pool)
-	meals.StartWeekScheduler(pool)
+func startBackgroundTasks(ctx context.Context, pool *pgxpool.Pool) {
+	authentication.StartSessionCleanup(ctx)
+	pantry.StartExpiryScheduler(ctx, pool)
+	meals.StartWeekScheduler(ctx, pool)
 }
 
 func loadEnv() {

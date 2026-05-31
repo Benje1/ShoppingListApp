@@ -219,7 +219,7 @@ func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 
 func queryID(r *http.Request) (int32, error) {
 	var id int32
-	if _, err := fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id); err != nil || id == 0 {
+	if _, err := fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id); err != nil || id <= 0 {
 		return 0, fmt.Errorf("valid id query parameter is required")
 	}
 	return id, nil
@@ -324,10 +324,12 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 				if err != nil {
 					return nil, err
 				}
-				var userID int32
-				fmt.Sscanf(r.URL.Query().Get("user_id"), "%d", &userID)
-				if userID == 0 {
-					userID = sess.UserID
+				userID := sess.UserID
+				if raw := r.URL.Query().Get("user_id"); raw != "" {
+					var parsed int32
+					if _, err := fmt.Sscanf(raw, "%d", &parsed); err == nil && parsed > 0 {
+						userID = parsed
+					}
 				}
 				householdID := pgtype.Int4{
 					Int32: sess.FirstHouseholdID(),
