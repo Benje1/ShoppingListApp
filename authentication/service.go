@@ -3,9 +3,11 @@ package authentication
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"weekly-shopping-app/database"
+	"weekly-shopping-app/internal/api/httpx"
 	"weekly-shopping-app/internal/logger"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -23,11 +25,11 @@ type SafeUser struct {
 func LoginService(ctx context.Context, repo database.UserRepository, username, password string) (*SafeUser, error) {
 	user, err := repo.GetUserByUsername(ctx, username)
 	if err != nil {
-		return nil, logger.WithStack(fmt.Errorf("invalid username or password: %w", err))
+		return nil, logger.WithStack(httpx.NewClientError(errors.New("invalid username or password")))
 	}
 
 	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, logger.WithStack(fmt.Errorf("invalid username or password: %w", err))
+		return nil, logger.WithStack(httpx.NewClientError(errors.New("invalid username or password")))
 	}
 
 	// Households is returned from the DB as a JSON []byte (pgx JSON column).
