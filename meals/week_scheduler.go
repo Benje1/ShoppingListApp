@@ -72,7 +72,7 @@ func runGeneration(db *pgxpool.Pool) {
 
 	scopes, err := database.DistinctScopes(ctx, db)
 	if err != nil {
-		logger.Error("week scheduler: could not fetch scopes", "err", err)
+		logger.Error("week scheduler: could not fetch scopes", "err", logger.WithStack(err))
 		return
 	}
 	if len(scopes) == 0 {
@@ -89,7 +89,7 @@ func runGeneration(db *pgxpool.Pool) {
 		})
 		if err != nil {
 			logger.Error("week scheduler: generating this week failed",
-				"week", thisWeek.Format("2006-01-02"), "err", err)
+				"week", thisWeek.Format("2006-01-02"), "err", logger.WithStack(err))
 		}
 		thisGenerated += n
 
@@ -101,7 +101,7 @@ func runGeneration(db *pgxpool.Pool) {
 		})
 		if err != nil {
 			logger.Error("week scheduler: generating next week failed",
-				"week", nextWeek.Format("2006-01-02"), "err", err)
+				"week", nextWeek.Format("2006-01-02"), "err", logger.WithStack(err))
 		}
 		nextGenerated += n
 	}

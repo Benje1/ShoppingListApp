@@ -6,6 +6,7 @@ import (
 	"time"
 
 	sqlc "weekly-shopping-app/database/sqlc"
+	"weekly-shopping-app/internal/logger"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -141,7 +142,7 @@ func addToPantry(ctx context.Context, db *pgxpool.Pool, userID int32, input AddT
 	var shelfLifeDays pgtype.Int4
 	items, err := q.GetAllShoppingItems(ctx)
 	if err != nil {
-		return PantryItemResponse{}, fmt.Errorf("could not load shopping items: %w", err)
+		return PantryItemResponse{}, logger.WithStack(fmt.Errorf("could not load shopping items: %w", err))
 	}
 	found := false
 	for _, si := range items {
@@ -164,13 +165,13 @@ func addToPantry(ctx context.Context, db *pgxpool.Pool, userID int32, input AddT
 		ExpiresOn:         expiresOn(shelfLifeDays),
 	})
 	if err != nil {
-		return PantryItemResponse{}, err
+		return PantryItemResponse{}, logger.WithStack(err)
 	}
 
 	// Re-fetch full row for the response (UpsertPantryItem returns PantryEntry without item details)
 	rows, err := q.GetPantry(ctx, pantryParams(userID, input.HouseholdID))
 	if err != nil {
-		return PantryItemResponse{}, err
+		return PantryItemResponse{}, logger.WithStack(err)
 	}
 	for _, r := range rows {
 		if r.ID == entry.ID {
@@ -203,11 +204,11 @@ func cookMeal(ctx context.Context, db *pgxpool.Pool, userID int32, input CookMea
 	collectIngredients = func(mealID int32, scale float64) error {
 		meal, err := q.GetMeal(ctx, mealID)
 		if err != nil {
-			return err
+			return logger.WithStack(err)
 		}
 		ings, err := q.GetMealWithIngredients(ctx, mealID)
 		if err != nil {
-			return err
+			return logger.WithStack(err)
 		}
 		mealScale := scale
 		if meal.DefaultPortions > 0 {
@@ -222,7 +223,7 @@ func cookMeal(ctx context.Context, db *pgxpool.Pool, userID int32, input CookMea
 		// Recurse into sub-meals
 		components, err := q.GetMealComponents(ctx, mealID)
 		if err != nil {
-			return err
+			return logger.WithStack(err)
 		}
 		for _, c := range components {
 			if err := collectIngredients(c.ID, scale); err != nil {

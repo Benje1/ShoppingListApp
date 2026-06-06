@@ -35,7 +35,7 @@ func runJob(db *pgxpool.Pool) {
 	defer cancel()
 	n, err := RunExpiryJob(ctx, db)
 	if err != nil {
-		logger.Error("pantry expiry job failed", "err", err)
+		logger.Error("pantry expiry job failed", "err", logger.WithStack(err))
 		return
 	}
 	if n > 0 {
