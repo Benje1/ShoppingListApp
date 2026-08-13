@@ -130,7 +130,7 @@ const updateShoppingItemShelfLife = `-- name: UpdateShoppingItemShelfLife :one
 UPDATE shopping_items
 SET shelf_life_days = $2
 WHERE id = $1
-RETURNING id, name, item_type, text_id, portions_per_unit, shelf_life_days
+RETURNING id, name, item_type, text_id, portions_per_unit, shelf_life_days, allergens
 `
 
 type UpdateShoppingItemShelfLifeParams struct {
@@ -148,6 +148,7 @@ func (q *Queries) UpdateShoppingItemShelfLife(ctx context.Context, arg UpdateSho
 		&i.TextID,
 		&i.PortionsPerUnit,
 		&i.ShelfLifeDays,
+		&i.Allergens,
 	)
 	return i, err
 }

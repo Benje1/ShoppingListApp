@@ -66,7 +66,8 @@ SELECT
     mi.optional,
     si.name           AS ingredient_name,
     si.item_type      AS ingredient_type,
-    si.portions_per_unit
+    si.portions_per_unit,
+    si.allergens      AS ingredient_allergens
 FROM meals m
 JOIN meal_ingredients mi ON mi.meal_id = m.id
 JOIN shopping_items si   ON si.id = mi.shopping_item_id
@@ -77,7 +78,25 @@ ORDER BY si.name;
 -- Lists all global meals plus meals belonging to the given household.
 SELECT
     m.*,
-    COUNT(mi.shopping_item_id) AS ingredient_count
+    COUNT(mi.shopping_item_id) AS ingredient_count,
+    -- Derived allergen union: the meal's own manual tags plus every tag on its
+    -- ingredients and their sub-ingredients, de-duplicated into one array.
+    (
+        SELECT COALESCE(array_agg(DISTINCT a), '{}')
+        FROM (
+            SELECT unnest(m.allergens) AS a
+            UNION
+            SELECT unnest(si.allergens)
+            FROM meal_ingredients mi2
+            JOIN shopping_items si ON si.id = mi2.shopping_item_id
+            WHERE mi2.meal_id = m.id
+            UNION
+            SELECT unnest(sub.allergens)
+            FROM meal_ingredients mi3
+            JOIN sub_ingredients sub ON sub.shopping_item_id = mi3.shopping_item_id
+            WHERE mi3.meal_id = m.id
+        ) all_allergens
+    )::text[] AS derived_allergens
 FROM meals m
 LEFT JOIN meal_ingredients mi ON mi.meal_id = m.id
 WHERE m.household_id IS NULL

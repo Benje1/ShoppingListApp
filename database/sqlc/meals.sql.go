@@ -295,7 +295,8 @@ SELECT
     mi.optional,
     si.name           AS ingredient_name,
     si.item_type      AS ingredient_type,
-    si.portions_per_unit
+    si.portions_per_unit,
+    si.allergens      AS ingredient_allergens
 FROM meals m
 JOIN meal_ingredients mi ON mi.meal_id = m.id
 JOIN shopping_items si   ON si.id = mi.shopping_item_id
@@ -304,18 +305,19 @@ ORDER BY si.name
 `
 
 type GetMealWithIngredientsRow struct {
-	MealID          int32            `json:"meal_id"`
-	MealName        string           `json:"meal_name"`
-	MealDescription pgtype.Text      `json:"meal_description"`
-	DefaultPortions int32            `json:"default_portions"`
-	Season          NullSeason       `json:"season"`
-	ShoppingItemID  int32            `json:"shopping_item_id"`
-	Quantity        pgtype.Numeric   `json:"quantity"`
-	Unit            pgtype.Text      `json:"unit"`
-	Optional        bool             `json:"optional"`
-	IngredientName  string           `json:"ingredient_name"`
-	IngredientType  ShoppingItemType `json:"ingredient_type"`
-	PortionsPerUnit int32            `json:"portions_per_unit"`
+	MealID              int32            `json:"meal_id"`
+	MealName            string           `json:"meal_name"`
+	MealDescription     pgtype.Text      `json:"meal_description"`
+	DefaultPortions     int32            `json:"default_portions"`
+	Season              NullSeason       `json:"season"`
+	ShoppingItemID      int32            `json:"shopping_item_id"`
+	Quantity            pgtype.Numeric   `json:"quantity"`
+	Unit                pgtype.Text      `json:"unit"`
+	Optional            bool             `json:"optional"`
+	IngredientName      string           `json:"ingredient_name"`
+	IngredientType      ShoppingItemType `json:"ingredient_type"`
+	PortionsPerUnit     int32            `json:"portions_per_unit"`
+	IngredientAllergens []string         `json:"ingredient_allergens"`
 }
 
 // Returns one row per ingredient; join in application code to build the full meal.
@@ -341,6 +343,7 @@ func (q *Queries) GetMealWithIngredients(ctx context.Context, id int32) ([]GetMe
 			&i.IngredientName,
 			&i.IngredientType,
 			&i.PortionsPerUnit,
+			&i.IngredientAllergens,
 		); err != nil {
 			return nil, err
 		}
@@ -472,7 +475,25 @@ func (q *Queries) ListMeals(ctx context.Context, householdID pgtype.Int4) ([]Mea
 const listMealsWithIngredientCount = `-- name: ListMealsWithIngredientCount :many
 SELECT
     m.id, m.name, m.description, m.default_portions, m.season, m.photo_url, m.recipe, m.allergens, m.household_id,
-    COUNT(mi.shopping_item_id) AS ingredient_count
+    COUNT(mi.shopping_item_id) AS ingredient_count,
+    -- Derived allergen union: the meal's own manual tags plus every tag on its
+    -- ingredients and their sub-ingredients, de-duplicated into one array.
+    (
+        SELECT COALESCE(array_agg(DISTINCT a), '{}')
+        FROM (
+            SELECT unnest(m.allergens) AS a
+            UNION
+            SELECT unnest(si.allergens)
+            FROM meal_ingredients mi2
+            JOIN shopping_items si ON si.id = mi2.shopping_item_id
+            WHERE mi2.meal_id = m.id
+            UNION
+            SELECT unnest(sub.allergens)
+            FROM meal_ingredients mi3
+            JOIN sub_ingredients sub ON sub.shopping_item_id = mi3.shopping_item_id
+            WHERE mi3.meal_id = m.id
+        ) all_allergens
+    )::text[] AS derived_allergens
 FROM meals m
 LEFT JOIN meal_ingredients mi ON mi.meal_id = m.id
 WHERE m.household_id IS NULL
@@ -482,16 +503,17 @@ ORDER BY m.name
 `
 
 type ListMealsWithIngredientCountRow struct {
-	ID              int32       `json:"id"`
-	Name            string      `json:"name"`
-	Description     pgtype.Text `json:"description"`
-	DefaultPortions int32       `json:"default_portions"`
-	Season          NullSeason  `json:"season"`
-	PhotoUrl        pgtype.Text `json:"photo_url"`
-	Recipe          pgtype.Text `json:"recipe"`
-	Allergens       []string    `json:"allergens"`
-	HouseholdID     pgtype.Int4 `json:"household_id"`
-	IngredientCount int64       `json:"ingredient_count"`
+	ID               int32       `json:"id"`
+	Name             string      `json:"name"`
+	Description      pgtype.Text `json:"description"`
+	DefaultPortions  int32       `json:"default_portions"`
+	Season           NullSeason  `json:"season"`
+	PhotoUrl         pgtype.Text `json:"photo_url"`
+	Recipe           pgtype.Text `json:"recipe"`
+	Allergens        []string    `json:"allergens"`
+	HouseholdID      pgtype.Int4 `json:"household_id"`
+	IngredientCount  int64       `json:"ingredient_count"`
+	DerivedAllergens []string    `json:"derived_allergens"`
 }
 
 // Lists all global meals plus meals belonging to the given household.
@@ -515,6 +537,7 @@ func (q *Queries) ListMealsWithIngredientCount(ctx context.Context, householdID 
 			&i.Allergens,
 			&i.HouseholdID,
 			&i.IngredientCount,
+			&i.DerivedAllergens,
 		); err != nil {
 			return nil, err
 		}

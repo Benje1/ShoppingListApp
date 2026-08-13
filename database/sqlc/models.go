@@ -227,6 +227,7 @@ type ShoppingItem struct {
 	TextID          pgtype.Text      `json:"text_id"`
 	PortionsPerUnit int32            `json:"portions_per_unit"`
 	ShelfLifeDays   pgtype.Int4      `json:"shelf_life_days"`
+	Allergens       []string         `json:"allergens"`
 }
 
 type ShoppingList struct {
@@ -244,6 +245,14 @@ type ShoppingListHaveIt struct {
 	HouseholdID    pgtype.Int4      `json:"household_id"`
 	UserID         pgtype.Int4      `json:"user_id"`
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+}
+
+type SubIngredient struct {
+	ID             int32    `json:"id"`
+	ShoppingItemID int32    `json:"shopping_item_id"`
+	Name           string   `json:"name"`
+	Allergens      []string `json:"allergens"`
+	SortOrder      int32    `json:"sort_order"`
 }
 
 type User struct {
