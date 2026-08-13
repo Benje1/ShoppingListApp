@@ -6,7 +6,9 @@ import (
 	"net/http"
 
 	"weekly-shopping-app/database"
+	sqlcdb "weekly-shopping-app/database/sqlc"
 	"weekly-shopping-app/internal/api/httpx"
+	"weekly-shopping-app/internal/logger"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -78,6 +80,11 @@ func loginHandlerFn(db *pgxpool.Pool) func(http.ResponseWriter, *http.Request, L
 			householdIds[i] = h.HouseholdID
 		}
 		token := CreateSession(w, user.Username, user.ID, householdIds)
+		// Snapshot the prior login time so the cook-review window knows how far
+		// back to look. Non-fatal — a failure here must not block login.
+		if _, err := sqlcdb.New(db).UpdateLastSeen(r.Context(), user.ID); err != nil {
+			logger.Warn("could not update last_seen_at", "user_id", user.ID, "err", err)
+		}
 		return LoginResponse{
 			ID:           user.ID,
 			Name:         user.Name,

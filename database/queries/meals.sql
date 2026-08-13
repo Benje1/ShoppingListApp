@@ -1,6 +1,6 @@
 -- name: CreateMeal :one
-INSERT INTO meals (name, description, default_portions, season, household_id)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO meals (name, description, default_portions, season, photo_url, recipe, allergens, household_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: GetMeal :one
@@ -21,7 +21,10 @@ SET name             = $2,
     description      = $3,
     default_portions = $4,
     season           = $5,
-    household_id     = $6
+    photo_url        = $6,
+    recipe           = $7,
+    allergens        = $8,
+    household_id     = $9
 WHERE id = $1
 RETURNING *;
 
@@ -30,14 +33,15 @@ DELETE FROM meals
 WHERE id = $1;
 
 -- name: AddMealIngredient :one
-INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit)
-VALUES ($1, $2, $3, $4)
+INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit, optional)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: UpdateMealIngredient :one
 UPDATE meal_ingredients
 SET quantity = $3,
-    unit     = $4
+    unit     = $4,
+    optional = $5
 WHERE meal_id = $1 AND shopping_item_id = $2
 RETURNING *;
 
@@ -56,6 +60,7 @@ SELECT
     mi.shopping_item_id,
     mi.quantity,
     mi.unit,
+    mi.optional,
     si.name           AS ingredient_name,
     si.item_type      AS ingredient_type,
     si.portions_per_unit

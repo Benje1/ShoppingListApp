@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	sqlc "weekly-shopping-app/database/sqlc"
+	"weekly-shopping-app/internal/api/httpx"
 	"weekly-shopping-app/internal/logger"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -21,6 +23,7 @@ type IngredientResponse struct {
 	Quantity        float64 `json:"quantity"`
 	Unit            string  `json:"unit"`
 	PortionsPerUnit int32   `json:"portions_per_unit"`
+	Optional        bool    `json:"optional"`
 }
 
 type ParentRef struct {
@@ -29,27 +32,32 @@ type ParentRef struct {
 }
 
 type MealResponse struct {
-	ID              int32  `json:"id"`
-	Name            string `json:"name"`
-	Description     string `json:"description"`
-	DefaultPortions int32  `json:"default_portions"`
-	Season          string `json:"season"` // empty string means no season set
+	ID              int32    `json:"id"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	DefaultPortions int32    `json:"default_portions"`
+	Season          string   `json:"season"`    // empty string means no season set
+	PhotoURL        string   `json:"photo_url"` // empty string means no photo
+	Recipe          string   `json:"recipe"`    // empty string means no recipe
+	Allergens       []string `json:"allergens"` // structured allergen tags
 	// HouseholdID is nil for global/shared meals.
 	HouseholdID  *int32                     `json:"household_id"`
 	Ingredients  []IngredientResponse       `json:"ingredients"`
 	Cooks        []CookResponse             `json:"cooks"`
-	Components   []ComponentResponse        `json:"components"`  // sub-meals
-	PartOf       []ParentRef                `json:"part_of"`     // composite meals that include this
+	Components   []ComponentResponse        `json:"components"`    // sub-meals
+	PartOf       []ParentRef                `json:"part_of"`       // composite meals that include this
 	OptionGroups []OptionGroupEntryResponse `json:"option_groups"` // optional choice groups
 }
 
 type MealSummary struct {
-	ID              int32  `json:"id"`
-	Name            string `json:"name"`
-	Description     string `json:"description"`
-	DefaultPortions int32  `json:"default_portions"`
-	Season          string `json:"season"` // empty string means no season set
-	IngredientCount int64  `json:"ingredient_count"`
+	ID              int32    `json:"id"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	DefaultPortions int32    `json:"default_portions"`
+	Season          string   `json:"season"`    // empty string means no season set
+	PhotoURL        string   `json:"photo_url"` // empty string means no photo
+	Allergens       []string `json:"allergens"`
+	IngredientCount int64    `json:"ingredient_count"`
 	// HouseholdID is nil for global/shared meals.
 	HouseholdID *int32 `json:"household_id"`
 }
@@ -60,7 +68,10 @@ type CreateMealInput struct {
 	Name            string            `json:"name"`
 	Description     string            `json:"description"`
 	DefaultPortions int32             `json:"default_portions"`
-	Season          string            `json:"season"` // "spring"|"summer"|"autumn"|"winter"|"" (nullable)
+	Season          string            `json:"season"`    // "spring"|"summer"|"autumn"|"winter"|"" (nullable)
+	PhotoURL        string            `json:"photo_url"` // image URL, "" for none
+	Recipe          string            `json:"recipe"`    // free-text recipe/instructions
+	Allergens       []string          `json:"allergens"` // subset of the fixed allergen set
 	Ingredients     []IngredientInput `json:"ingredients"`
 	// HouseholdID makes this meal household-specific. Omit (or set 0) for a global meal.
 	HouseholdID int32 `json:"household_id"`
@@ -70,13 +81,17 @@ type IngredientInput struct {
 	ItemID   int32   `json:"item_id"`
 	Quantity float64 `json:"quantity"`
 	Unit     string  `json:"unit"`
+	Optional bool    `json:"optional"`
 }
 
 type UpdateMealInput struct {
-	Name            string `json:"name"`
-	Description     string `json:"description"`
-	DefaultPortions int32  `json:"default_portions"`
-	Season          string `json:"season"` // "spring"|"summer"|"autumn"|"winter"|"" (nullable)
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	DefaultPortions int32    `json:"default_portions"`
+	Season          string   `json:"season"`    // "spring"|"summer"|"autumn"|"winter"|"" (nullable)
+	PhotoURL        string   `json:"photo_url"` // image URL, "" for none
+	Recipe          string   `json:"recipe"`    // free-text recipe/instructions
+	Allergens       []string `json:"allergens"` // subset of the fixed allergen set
 	// HouseholdID makes this meal household-specific. Set 0 to make it global again.
 	HouseholdID int32 `json:"household_id"`
 }
@@ -85,12 +100,14 @@ type AddIngredientInput struct {
 	ItemID   int32   `json:"item_id"`
 	Quantity float64 `json:"quantity"`
 	Unit     string  `json:"unit"`
+	Optional bool    `json:"optional"`
 }
 
 type UpdateIngredientInput struct {
 	ItemID   int32   `json:"item_id"`
 	Quantity float64 `json:"quantity"`
 	Unit     string  `json:"unit"`
+	Optional bool    `json:"optional"`
 }
 
 type RemoveIngredientInput struct {
@@ -155,10 +172,54 @@ func toText(s string) pgtype.Text {
 	return pgtype.Text{String: s, Valid: true}
 }
 
+func textOrEmpty(t pgtype.Text) string {
+	if t.Valid {
+		return t.String
+	}
+	return ""
+}
+
+// allergensOrEmpty guarantees a non-nil slice so JSON encodes [] rather than null.
+func allergensOrEmpty(a []string) []string {
+	if a == nil {
+		return []string{}
+	}
+	return a
+}
+
 func toNumeric(f float64) pgtype.Numeric {
 	n := pgtype.Numeric{}
 	_ = n.Scan(fmt.Sprintf("%.2f", f))
 	return n
+}
+
+// allowedAllergens is the fixed set of allergen tags a meal may carry
+// (the EU 14 major allergens). Kept in sync with the frontend chip list.
+var allowedAllergens = map[string]bool{
+	"gluten": true, "crustaceans": true, "eggs": true, "fish": true,
+	"peanuts": true, "soy": true, "dairy": true, "nuts": true,
+	"celery": true, "mustard": true, "sesame": true, "sulphites": true,
+	"lupin": true, "molluscs": true,
+}
+
+// sanitizeAllergens lowercases, de-duplicates, and drops any tag not in the
+// allowed set. Returns a non-nil (possibly empty) slice so the DB column is
+// never NULL and the JSON response is always an array.
+func sanitizeAllergens(in []string) ([]string, error) {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, a := range in {
+		tag := strings.ToLower(strings.TrimSpace(a))
+		if tag == "" || seen[tag] {
+			continue
+		}
+		if !allowedAllergens[tag] {
+			return nil, httpx.NewClientError(fmt.Errorf("unknown allergen %q", a))
+		}
+		seen[tag] = true
+		out = append(out, tag)
+	}
+	return out, nil
 }
 
 func toNullSeason(s string) sqlc.NullSeason {
@@ -195,6 +256,7 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 			Quantity:        numericToFloat(r.Quantity),
 			Unit:            unit,
 			PortionsPerUnit: r.PortionsPerUnit,
+			Optional:        r.Optional,
 		})
 	}
 	resp := MealResponse{
@@ -202,6 +264,9 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 		Name:            meal.Name,
 		Description:     desc,
 		DefaultPortions: meal.DefaultPortions,
+		PhotoURL:        textOrEmpty(meal.PhotoUrl),
+		Recipe:          textOrEmpty(meal.Recipe),
+		Allergens:       allergensOrEmpty(meal.Allergens),
 		Ingredients:     ingredients,
 		Cooks:           []CookResponse{},
 		Components:      []ComponentResponse{},
@@ -237,6 +302,8 @@ func listMeals(ctx context.Context, db *pgxpool.Pool, householdID pgtype.Int4) (
 			Name:            r.Name,
 			Description:     desc,
 			DefaultPortions: r.DefaultPortions,
+			PhotoURL:        textOrEmpty(r.PhotoUrl),
+			Allergens:       allergensOrEmpty(r.Allergens),
 			IngredientCount: r.IngredientCount,
 		}
 		if r.Season.Valid {
@@ -318,12 +385,19 @@ func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*
 	if input.DefaultPortions <= 0 {
 		input.DefaultPortions = 2
 	}
+	allergens, err := sanitizeAllergens(input.Allergens)
+	if err != nil {
+		return nil, err
+	}
 	q := sqlc.New(db)
 	meal, err := q.CreateMeal(ctx, sqlc.CreateMealParams{
 		Name:            input.Name,
 		Description:     toText(input.Description),
 		DefaultPortions: input.DefaultPortions,
 		Season:          toNullSeason(input.Season),
+		PhotoUrl:        toText(input.PhotoURL),
+		Recipe:          toText(input.Recipe),
+		Allergens:       allergens,
 		HouseholdID:     nullableInt4(input.HouseholdID),
 	})
 	if err != nil {
@@ -336,6 +410,7 @@ func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*
 			ShoppingItemID: ing.ItemID,
 			Quantity:       toNumeric(ing.Quantity),
 			Unit:           toText(ing.Unit),
+			Optional:       ing.Optional,
 		}); err != nil {
 			return nil, logger.WithStack(fmt.Errorf("adding ingredient %d: %w", ing.ItemID, err))
 		}
@@ -347,6 +422,10 @@ func updateMeal(ctx context.Context, db *pgxpool.Pool, id int32, input UpdateMea
 	if input.DefaultPortions <= 0 {
 		input.DefaultPortions = 2
 	}
+	allergens, err := sanitizeAllergens(input.Allergens)
+	if err != nil {
+		return nil, err
+	}
 	q := sqlc.New(db)
 	if _, err := q.UpdateMeal(ctx, sqlc.UpdateMealParams{
 		ID:              id,
@@ -354,6 +433,9 @@ func updateMeal(ctx context.Context, db *pgxpool.Pool, id int32, input UpdateMea
 		Description:     toText(input.Description),
 		DefaultPortions: input.DefaultPortions,
 		Season:          toNullSeason(input.Season),
+		PhotoUrl:        toText(input.PhotoURL),
+		Recipe:          toText(input.Recipe),
+		Allergens:       allergens,
 		HouseholdID:     nullableInt4(input.HouseholdID),
 	}); err != nil {
 		return nil, logger.WithStack(err)
@@ -373,6 +455,7 @@ func addIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input Ad
 		ShoppingItemID: input.ItemID,
 		Quantity:       toNumeric(input.Quantity),
 		Unit:           toText(input.Unit),
+		Optional:       input.Optional,
 	}); err != nil {
 		return nil, err
 	}
@@ -386,6 +469,7 @@ func updateIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input
 		ShoppingItemID: input.ItemID,
 		Quantity:       toNumeric(input.Quantity),
 		Unit:           toText(input.Unit),
+		Optional:       input.Optional,
 	}); err != nil {
 		return nil, err
 	}

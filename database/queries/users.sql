@@ -42,3 +42,16 @@ GROUP BY u.id;
 -- name: UpdateUserHouseholdMemberships :exec
 INSERT INTO household_members (household_id, user_id)
 VALUES ($2, $1);
+
+-- name: GetPreviousSeen :one
+-- The prior-login timestamp; anchors the cook-review lookback window.
+SELECT previous_seen_at FROM users WHERE id = $1;
+
+-- name: UpdateLastSeen :one
+-- Snapshot the prior last_seen_at into previous_seen_at, then stamp now().
+-- previous_seen_at anchors the login cook-review window.
+UPDATE users
+SET previous_seen_at = last_seen_at,
+    last_seen_at     = now()
+WHERE id = $1
+RETURNING previous_seen_at;

@@ -258,6 +258,16 @@ func cookMeal(ctx context.Context, db *pgxpool.Pool, userID int32, input CookMea
 	return nil
 }
 
+// CookMeal decrements pantry portions for a cooked meal (and its sub-meals).
+// Exported so the meals cook-review flow can reuse the exact same logic that
+// backs POST /pantry/cook.
+func CookMeal(ctx context.Context, db *pgxpool.Pool, userID int32, input CookMealInput) error {
+	if input.Portions <= 0 {
+		input.Portions = 1
+	}
+	return cookMeal(ctx, db, userID, input)
+}
+
 // numericToFloat2 is a local alias to avoid the package-level name clash
 func numericToFloat2(n pgtype.Numeric) float64 {
 	if !n.Valid {

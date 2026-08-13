@@ -16,11 +16,13 @@ CREATE TABLE households (
 );
 
 CREATE TABLE users (
-    id            SERIAL PRIMARY KEY,
-    name          TEXT NOT NULL,
-    username      TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    created_at    TIMESTAMP DEFAULT now()
+    id               SERIAL PRIMARY KEY,
+    name             TEXT NOT NULL,
+    username         TEXT NOT NULL UNIQUE,
+    password_hash    TEXT NOT NULL,
+    created_at       TIMESTAMP DEFAULT now(),
+    last_seen_at     TIMESTAMP,
+    previous_seen_at TIMESTAMP
 );
 
 CREATE TABLE household_members (
@@ -94,6 +96,10 @@ CREATE TABLE meals (
     description      TEXT,
     default_portions INT NOT NULL DEFAULT 2,
     season           season NULL,
+    photo_url        TEXT,
+    recipe           TEXT,
+    -- Structured allergen tags, validated in application code against a fixed set.
+    allergens        TEXT[] NOT NULL DEFAULT '{}',
     -- NULL = global/shared meal; non-NULL = only visible within this household
     household_id     INT REFERENCES households(household_id) ON DELETE CASCADE
 );
@@ -105,6 +111,7 @@ CREATE TABLE meal_ingredients (
     shopping_item_id INT REFERENCES shopping_items(id) ON DELETE RESTRICT,
     quantity         NUMERIC(10, 2) NOT NULL DEFAULT 1,
     unit             TEXT,
+    optional         BOOLEAN NOT NULL DEFAULT false,
     PRIMARY KEY (meal_id, shopping_item_id)
 );
 
@@ -216,3 +223,26 @@ CREATE UNIQUE INDEX idx_pantry_item_user
 
 CREATE INDEX idx_pantry_expires_on ON pantry(expires_on) WHERE expires_on IS NOT NULL;
 CREATE INDEX idx_pantry_status     ON pantry(status);
+
+-- meal_cook_log records the answer to "did you make <meal> on <date>?" so the
+-- login cook-review never re-prompts. One row per (scope, date, meal).
+CREATE TABLE meal_cook_log (
+    id           SERIAL PRIMARY KEY,
+    meal_id      INT  NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
+    cook_date    DATE NOT NULL,
+    made         BOOLEAN NOT NULL,
+    household_id INT REFERENCES households(household_id) ON DELETE CASCADE,
+    user_id      INT REFERENCES users(id) ON DELETE CASCADE,
+    answered_by  INT REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMP NOT NULL DEFAULT now(),
+    CHECK (
+        (household_id IS NOT NULL AND user_id IS NULL) OR
+        (household_id IS NULL     AND user_id IS NOT NULL)
+    )
+);
+
+CREATE UNIQUE INDEX idx_meal_cook_log_household
+    ON meal_cook_log (cook_date, meal_id, household_id) WHERE household_id IS NOT NULL;
+
+CREATE UNIQUE INDEX idx_meal_cook_log_user
+    ON meal_cook_log (cook_date, meal_id, user_id) WHERE user_id IS NOT NULL;

@@ -31,9 +31,9 @@ func (q *Queries) AddMealCook(ctx context.Context, arg AddMealCookParams) error 
 }
 
 const addMealIngredient = `-- name: AddMealIngredient :one
-INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit)
-VALUES ($1, $2, $3, $4)
-RETURNING meal_id, shopping_item_id, quantity, unit
+INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit, optional)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING meal_id, shopping_item_id, quantity, unit, optional
 `
 
 type AddMealIngredientParams struct {
@@ -41,6 +41,7 @@ type AddMealIngredientParams struct {
 	ShoppingItemID int32          `json:"shopping_item_id"`
 	Quantity       pgtype.Numeric `json:"quantity"`
 	Unit           pgtype.Text    `json:"unit"`
+	Optional       bool           `json:"optional"`
 }
 
 func (q *Queries) AddMealIngredient(ctx context.Context, arg AddMealIngredientParams) (MealIngredient, error) {
@@ -49,6 +50,7 @@ func (q *Queries) AddMealIngredient(ctx context.Context, arg AddMealIngredientPa
 		arg.ShoppingItemID,
 		arg.Quantity,
 		arg.Unit,
+		arg.Optional,
 	)
 	var i MealIngredient
 	err := row.Scan(
@@ -56,6 +58,7 @@ func (q *Queries) AddMealIngredient(ctx context.Context, arg AddMealIngredientPa
 		&i.ShoppingItemID,
 		&i.Quantity,
 		&i.Unit,
+		&i.Optional,
 	)
 	return i, err
 }
@@ -78,9 +81,9 @@ func (q *Queries) ClearMealPlanDay(ctx context.Context, arg ClearMealPlanDayPara
 }
 
 const createMeal = `-- name: CreateMeal :one
-INSERT INTO meals (name, description, default_portions, season, household_id)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, name, description, default_portions, season, household_id
+INSERT INTO meals (name, description, default_portions, season, photo_url, recipe, allergens, household_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, name, description, default_portions, season, photo_url, recipe, allergens, household_id
 `
 
 type CreateMealParams struct {
@@ -88,6 +91,9 @@ type CreateMealParams struct {
 	Description     pgtype.Text `json:"description"`
 	DefaultPortions int32       `json:"default_portions"`
 	Season          NullSeason  `json:"season"`
+	PhotoUrl        pgtype.Text `json:"photo_url"`
+	Recipe          pgtype.Text `json:"recipe"`
+	Allergens       []string    `json:"allergens"`
 	HouseholdID     pgtype.Int4 `json:"household_id"`
 }
 
@@ -97,6 +103,9 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 		arg.Description,
 		arg.DefaultPortions,
 		arg.Season,
+		arg.PhotoUrl,
+		arg.Recipe,
+		arg.Allergens,
 		arg.HouseholdID,
 	)
 	var i Meal
@@ -106,6 +115,9 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 		&i.Description,
 		&i.DefaultPortions,
 		&i.Season,
+		&i.PhotoUrl,
+		&i.Recipe,
+		&i.Allergens,
 		&i.HouseholdID,
 	)
 	return i, err
@@ -122,7 +134,7 @@ func (q *Queries) DeleteMeal(ctx context.Context, id int32) error {
 }
 
 const getMeal = `-- name: GetMeal :one
-SELECT id, name, description, default_portions, season, household_id FROM meals
+SELECT id, name, description, default_portions, season, photo_url, recipe, allergens, household_id FROM meals
 WHERE id = $1
 `
 
@@ -135,6 +147,9 @@ func (q *Queries) GetMeal(ctx context.Context, id int32) (Meal, error) {
 		&i.Description,
 		&i.DefaultPortions,
 		&i.Season,
+		&i.PhotoUrl,
+		&i.Recipe,
+		&i.Allergens,
 		&i.HouseholdID,
 	)
 	return i, err
@@ -274,6 +289,7 @@ SELECT
     mi.shopping_item_id,
     mi.quantity,
     mi.unit,
+    mi.optional,
     si.name           AS ingredient_name,
     si.item_type      AS ingredient_type,
     si.portions_per_unit
@@ -293,6 +309,7 @@ type GetMealWithIngredientsRow struct {
 	ShoppingItemID  int32            `json:"shopping_item_id"`
 	Quantity        pgtype.Numeric   `json:"quantity"`
 	Unit            pgtype.Text      `json:"unit"`
+	Optional        bool             `json:"optional"`
 	IngredientName  string           `json:"ingredient_name"`
 	IngredientType  ShoppingItemType `json:"ingredient_type"`
 	PortionsPerUnit int32            `json:"portions_per_unit"`
@@ -317,6 +334,7 @@ func (q *Queries) GetMealWithIngredients(ctx context.Context, id int32) ([]GetMe
 			&i.ShoppingItemID,
 			&i.Quantity,
 			&i.Unit,
+			&i.Optional,
 			&i.IngredientName,
 			&i.IngredientType,
 			&i.PortionsPerUnit,
@@ -366,6 +384,15 @@ type GetMealsForCookParams struct {
 	HouseholdID pgtype.Int4 `json:"household_id"`
 }
 
+type GetMealsForCookRow struct {
+	ID              int32       `json:"id"`
+	Name            string      `json:"name"`
+	Description     pgtype.Text `json:"description"`
+	DefaultPortions int32       `json:"default_portions"`
+	Season          NullSeason  `json:"season"`
+	HouseholdID     pgtype.Int4 `json:"household_id"`
+}
+
 // Meals that a specific user can cook within a given household context:
 //  1. Meal is assigned to this user with this exact household_id, OR
 //  2. Meal is assigned to this user with no household restriction (NULL), OR
@@ -373,15 +400,15 @@ type GetMealsForCookParams struct {
 //
 // Additionally, household-specific meals are filtered: if a meal has a
 // household_id set, it is only returned when the caller's household matches.
-func (q *Queries) GetMealsForCook(ctx context.Context, arg GetMealsForCookParams) ([]Meal, error) {
+func (q *Queries) GetMealsForCook(ctx context.Context, arg GetMealsForCookParams) ([]GetMealsForCookRow, error) {
 	rows, err := q.db.Query(ctx, getMealsForCook, arg.UserID, arg.HouseholdID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Meal
+	var items []GetMealsForCookRow
 	for rows.Next() {
-		var i Meal
+		var i GetMealsForCookRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -401,7 +428,7 @@ func (q *Queries) GetMealsForCook(ctx context.Context, arg GetMealsForCookParams
 }
 
 const listMeals = `-- name: ListMeals :many
-SELECT id, name, description, default_portions, season, household_id FROM meals
+SELECT id, name, description, default_portions, season, photo_url, recipe, allergens, household_id FROM meals
 WHERE household_id IS NULL
    OR household_id = $1
 ORDER BY name
@@ -424,6 +451,9 @@ func (q *Queries) ListMeals(ctx context.Context, householdID pgtype.Int4) ([]Mea
 			&i.Description,
 			&i.DefaultPortions,
 			&i.Season,
+			&i.PhotoUrl,
+			&i.Recipe,
+			&i.Allergens,
 			&i.HouseholdID,
 		); err != nil {
 			return nil, err
@@ -438,7 +468,7 @@ func (q *Queries) ListMeals(ctx context.Context, householdID pgtype.Int4) ([]Mea
 
 const listMealsWithIngredientCount = `-- name: ListMealsWithIngredientCount :many
 SELECT
-    m.id, m.name, m.description, m.default_portions, m.season, m.household_id,
+    m.id, m.name, m.description, m.default_portions, m.season, m.photo_url, m.recipe, m.allergens, m.household_id,
     COUNT(mi.shopping_item_id) AS ingredient_count
 FROM meals m
 LEFT JOIN meal_ingredients mi ON mi.meal_id = m.id
@@ -454,6 +484,9 @@ type ListMealsWithIngredientCountRow struct {
 	Description     pgtype.Text `json:"description"`
 	DefaultPortions int32       `json:"default_portions"`
 	Season          NullSeason  `json:"season"`
+	PhotoUrl        pgtype.Text `json:"photo_url"`
+	Recipe          pgtype.Text `json:"recipe"`
+	Allergens       []string    `json:"allergens"`
 	HouseholdID     pgtype.Int4 `json:"household_id"`
 	IngredientCount int64       `json:"ingredient_count"`
 }
@@ -474,6 +507,9 @@ func (q *Queries) ListMealsWithIngredientCount(ctx context.Context, householdID 
 			&i.Description,
 			&i.DefaultPortions,
 			&i.Season,
+			&i.PhotoUrl,
+			&i.Recipe,
+			&i.Allergens,
 			&i.HouseholdID,
 			&i.IngredientCount,
 		); err != nil {
@@ -576,9 +612,12 @@ SET name             = $2,
     description      = $3,
     default_portions = $4,
     season           = $5,
-    household_id     = $6
+    photo_url        = $6,
+    recipe           = $7,
+    allergens        = $8,
+    household_id     = $9
 WHERE id = $1
-RETURNING id, name, description, default_portions, season, household_id
+RETURNING id, name, description, default_portions, season, photo_url, recipe, allergens, household_id
 `
 
 type UpdateMealParams struct {
@@ -587,6 +626,9 @@ type UpdateMealParams struct {
 	Description     pgtype.Text `json:"description"`
 	DefaultPortions int32       `json:"default_portions"`
 	Season          NullSeason  `json:"season"`
+	PhotoUrl        pgtype.Text `json:"photo_url"`
+	Recipe          pgtype.Text `json:"recipe"`
+	Allergens       []string    `json:"allergens"`
 	HouseholdID     pgtype.Int4 `json:"household_id"`
 }
 
@@ -597,6 +639,9 @@ func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, e
 		arg.Description,
 		arg.DefaultPortions,
 		arg.Season,
+		arg.PhotoUrl,
+		arg.Recipe,
+		arg.Allergens,
 		arg.HouseholdID,
 	)
 	var i Meal
@@ -606,6 +651,9 @@ func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, e
 		&i.Description,
 		&i.DefaultPortions,
 		&i.Season,
+		&i.PhotoUrl,
+		&i.Recipe,
+		&i.Allergens,
 		&i.HouseholdID,
 	)
 	return i, err
@@ -614,9 +662,10 @@ func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, e
 const updateMealIngredient = `-- name: UpdateMealIngredient :one
 UPDATE meal_ingredients
 SET quantity = $3,
-    unit     = $4
+    unit     = $4,
+    optional = $5
 WHERE meal_id = $1 AND shopping_item_id = $2
-RETURNING meal_id, shopping_item_id, quantity, unit
+RETURNING meal_id, shopping_item_id, quantity, unit, optional
 `
 
 type UpdateMealIngredientParams struct {
@@ -624,6 +673,7 @@ type UpdateMealIngredientParams struct {
 	ShoppingItemID int32          `json:"shopping_item_id"`
 	Quantity       pgtype.Numeric `json:"quantity"`
 	Unit           pgtype.Text    `json:"unit"`
+	Optional       bool           `json:"optional"`
 }
 
 func (q *Queries) UpdateMealIngredient(ctx context.Context, arg UpdateMealIngredientParams) (MealIngredient, error) {
@@ -632,6 +682,7 @@ func (q *Queries) UpdateMealIngredient(ctx context.Context, arg UpdateMealIngred
 		arg.ShoppingItemID,
 		arg.Quantity,
 		arg.Unit,
+		arg.Optional,
 	)
 	var i MealIngredient
 	err := row.Scan(
@@ -639,6 +690,7 @@ func (q *Queries) UpdateMealIngredient(ctx context.Context, arg UpdateMealIngred
 		&i.ShoppingItemID,
 		&i.Quantity,
 		&i.Unit,
+		&i.Optional,
 	)
 	return i, err
 }
