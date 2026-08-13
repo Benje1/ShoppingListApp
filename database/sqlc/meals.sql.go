@@ -82,7 +82,10 @@ func (q *Queries) ClearMealPlanDay(ctx context.Context, arg ClearMealPlanDayPara
 
 const createMeal = `-- name: CreateMeal :one
 INSERT INTO meals (name, description, default_portions, season, photo_url, recipe, allergens, household_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+VALUES (
+    $1, $2, $3, $4,
+    $5, $6, COALESCE($7::text[], '{}'), $8
+)
 RETURNING id, name, description, default_portions, season, photo_url, recipe, allergens, household_id
 `
 
@@ -608,20 +611,19 @@ func (q *Queries) SetMealPlanDay(ctx context.Context, arg SetMealPlanDayParams) 
 
 const updateMeal = `-- name: UpdateMeal :one
 UPDATE meals
-SET name             = $2,
-    description      = $3,
-    default_portions = $4,
-    season           = $5,
-    photo_url        = $6,
-    recipe           = $7,
-    allergens        = $8,
-    household_id     = $9
-WHERE id = $1
+SET name             = $1,
+    description      = $2,
+    default_portions = $3,
+    season           = $4,
+    photo_url        = $5,
+    recipe           = $6,
+    allergens        = COALESCE($7::text[], '{}'),
+    household_id     = $8
+WHERE id = $9
 RETURNING id, name, description, default_portions, season, photo_url, recipe, allergens, household_id
 `
 
 type UpdateMealParams struct {
-	ID              int32       `json:"id"`
 	Name            string      `json:"name"`
 	Description     pgtype.Text `json:"description"`
 	DefaultPortions int32       `json:"default_portions"`
@@ -630,11 +632,11 @@ type UpdateMealParams struct {
 	Recipe          pgtype.Text `json:"recipe"`
 	Allergens       []string    `json:"allergens"`
 	HouseholdID     pgtype.Int4 `json:"household_id"`
+	ID              int32       `json:"id"`
 }
 
 func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, error) {
 	row := q.db.QueryRow(ctx, updateMeal,
-		arg.ID,
 		arg.Name,
 		arg.Description,
 		arg.DefaultPortions,
@@ -643,6 +645,7 @@ func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, e
 		arg.Recipe,
 		arg.Allergens,
 		arg.HouseholdID,
+		arg.ID,
 	)
 	var i Meal
 	err := row.Scan(
