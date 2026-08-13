@@ -26,6 +26,18 @@ func (q *Queries) AddUserToHousehold(ctx context.Context, arg AddUserToHousehold
 	return err
 }
 
+const getPreviousSeen = `-- name: GetPreviousSeen :one
+SELECT previous_seen_at FROM users WHERE id = $1
+`
+
+// The prior-login timestamp; anchors the cook-review lookback window.
+func (q *Queries) GetPreviousSeen(ctx context.Context, id int32) (pgtype.Timestamp, error) {
+	row := q.db.QueryRow(ctx, getPreviousSeen, id)
+	var previous_seen_at pgtype.Timestamp
+	err := row.Scan(&previous_seen_at)
+	return previous_seen_at, err
+}
+
 const getUserByUsername = `-- name: GetUserByUsername :one
 SELECT
     u.id,
@@ -73,7 +85,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 const insertUser = `-- name: InsertUser :one
 INSERT INTO users (name, username, password_hash)
 VALUES ($1, $2, $3)
-RETURNING id, name, username, password_hash, created_at
+RETURNING id, name, username, password_hash, created_at, last_seen_at, previous_seen_at
 `
 
 type InsertUserParams struct {
@@ -91,8 +103,27 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, e
 		&i.Username,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.PreviousSeenAt,
 	)
 	return i, err
+}
+
+const updateLastSeen = `-- name: UpdateLastSeen :one
+UPDATE users
+SET previous_seen_at = last_seen_at,
+    last_seen_at     = now()
+WHERE id = $1
+RETURNING previous_seen_at
+`
+
+// Snapshot the prior last_seen_at into previous_seen_at, then stamp now().
+// previous_seen_at anchors the login cook-review window.
+func (q *Queries) UpdateLastSeen(ctx context.Context, id int32) (pgtype.Timestamp, error) {
+	row := q.db.QueryRow(ctx, updateLastSeen, id)
+	var previous_seen_at pgtype.Timestamp
+	err := row.Scan(&previous_seen_at)
+	return previous_seen_at, err
 }
 
 const updateUserHouseholdMemberships = `-- name: UpdateUserHouseholdMemberships :exec
@@ -114,7 +145,7 @@ const updateUserName = `-- name: UpdateUserName :one
 UPDATE users
 SET name = $1
 WHERE username = $2
-RETURNING id, name, username, password_hash, created_at
+RETURNING id, name, username, password_hash, created_at, last_seen_at, previous_seen_at
 `
 
 type UpdateUserNameParams struct {
@@ -131,6 +162,8 @@ func (q *Queries) UpdateUserName(ctx context.Context, arg UpdateUserNameParams) 
 		&i.Username,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.PreviousSeenAt,
 	)
 	return i, err
 }
@@ -139,7 +172,7 @@ const updateUserPassword = `-- name: UpdateUserPassword :one
 UPDATE users
 SET password_hash = $1
 WHERE username = $2
-RETURNING id, name, username, password_hash, created_at
+RETURNING id, name, username, password_hash, created_at, last_seen_at, previous_seen_at
 `
 
 type UpdateUserPasswordParams struct {
@@ -156,6 +189,8 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 		&i.Username,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.PreviousSeenAt,
 	)
 	return i, err
 }

@@ -187,3 +187,125 @@ func TestBuildMealResponse_WithIngredients(t *testing.T) {
 		t.Errorf("expected empty unit for onion, got %q", onion.Unit)
 	}
 }
+
+// ── textOrEmpty ────────────────────────────────────────────────────────────────
+
+func TestTextOrEmpty(t *testing.T) {
+	if got := textOrEmpty(pgtype.Text{String: "x", Valid: true}); got != "x" {
+		t.Errorf("expected %q, got %q", "x", got)
+	}
+	if got := textOrEmpty(pgtype.Text{Valid: false}); got != "" {
+		t.Errorf("expected empty string for invalid Text, got %q", got)
+	}
+}
+
+// ── allergensOrEmpty ───────────────────────────────────────────────────────────
+
+func TestAllergensOrEmpty_Nil(t *testing.T) {
+	got := allergensOrEmpty(nil)
+	if got == nil {
+		t.Fatal("expected non-nil slice so JSON encodes [] not null")
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty slice, got %v", got)
+	}
+}
+
+func TestAllergensOrEmpty_PassesThrough(t *testing.T) {
+	in := []string{"gluten", "dairy"}
+	got := allergensOrEmpty(in)
+	if len(got) != 2 || got[0] != "gluten" || got[1] != "dairy" {
+		t.Fatalf("expected passthrough, got %v", got)
+	}
+}
+
+// ── sanitizeAllergens ──────────────────────────────────────────────────────────
+
+func TestSanitizeAllergens_LowercasesTrimsAndDedups(t *testing.T) {
+	got, err := sanitizeAllergens([]string{"Gluten", " dairy ", "DAIRY", "gluten"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 || got[0] != "gluten" || got[1] != "dairy" {
+		t.Fatalf("expected [gluten dairy], got %v", got)
+	}
+}
+
+func TestSanitizeAllergens_SkipsEmptyEntries(t *testing.T) {
+	got, err := sanitizeAllergens([]string{"", "   ", "eggs"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0] != "eggs" {
+		t.Fatalf("expected [eggs], got %v", got)
+	}
+}
+
+func TestSanitizeAllergens_NilReturnsNonNilEmpty(t *testing.T) {
+	got, err := sanitizeAllergens(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil slice")
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty slice, got %v", got)
+	}
+}
+
+func TestSanitizeAllergens_UnknownReturnsError(t *testing.T) {
+	_, err := sanitizeAllergens([]string{"gluten", "kryptonite"})
+	if err == nil {
+		t.Fatal("expected error for unknown allergen")
+	}
+}
+
+// ── buildMealResponse: meal-card fields ────────────────────────────────────────
+
+func TestBuildMealResponse_CardFields(t *testing.T) {
+	meal := sqlc.Meal{
+		ID:              7,
+		Name:            "Curry",
+		DefaultPortions: 4,
+		PhotoUrl:        pgtype.Text{String: "http://img/curry.jpg", Valid: true},
+		Recipe:          pgtype.Text{String: "Simmer for 20 min", Valid: true},
+		Allergens:       []string{"gluten", "dairy"},
+	}
+	resp := buildMealResponse(meal, nil)
+	if resp.PhotoURL != "http://img/curry.jpg" {
+		t.Errorf("expected photo url, got %q", resp.PhotoURL)
+	}
+	if resp.Recipe != "Simmer for 20 min" {
+		t.Errorf("expected recipe, got %q", resp.Recipe)
+	}
+	if len(resp.Allergens) != 2 {
+		t.Errorf("expected 2 allergens, got %v", resp.Allergens)
+	}
+}
+
+func TestBuildMealResponse_NilAllergensEncodesEmpty(t *testing.T) {
+	meal := sqlc.Meal{ID: 8, Name: "Plain", DefaultPortions: 1}
+	resp := buildMealResponse(meal, nil)
+	if resp.Allergens == nil {
+		t.Fatal("expected non-nil allergens slice")
+	}
+	if resp.PhotoURL != "" || resp.Recipe != "" {
+		t.Errorf("expected empty photo/recipe, got %q / %q", resp.PhotoURL, resp.Recipe)
+	}
+}
+
+func TestBuildMealResponse_OptionalIngredient(t *testing.T) {
+	meal := sqlc.Meal{ID: 9, Name: "Salad", DefaultPortions: 2}
+	rows := []sqlc.GetMealWithIngredientsRow{
+		{ShoppingItemID: 1, IngredientName: "Lettuce", Optional: false},
+		{ShoppingItemID: 2, IngredientName: "Croutons", Optional: true},
+	}
+	resp := buildMealResponse(meal, rows)
+	if resp.Ingredients[0].Optional {
+		t.Error("expected Lettuce to be non-optional")
+	}
+	if !resp.Ingredients[1].Optional {
+		t.Error("expected Croutons to be optional")
+	}
+}

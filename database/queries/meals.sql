@@ -1,6 +1,9 @@
 -- name: CreateMeal :one
-INSERT INTO meals (name, description, default_portions, season, household_id)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO meals (name, description, default_portions, season, photo_url, recipe, allergens, household_id)
+VALUES (
+    sqlc.arg(name), sqlc.arg(description), sqlc.arg(default_portions), sqlc.arg(season),
+    sqlc.arg(photo_url), sqlc.arg(recipe), COALESCE(sqlc.arg(allergens)::text[], '{}'), sqlc.arg(household_id)
+)
 RETURNING *;
 
 -- name: GetMeal :one
@@ -17,12 +20,15 @@ ORDER BY name;
 
 -- name: UpdateMeal :one
 UPDATE meals
-SET name             = $2,
-    description      = $3,
-    default_portions = $4,
-    season           = $5,
-    household_id     = $6
-WHERE id = $1
+SET name             = sqlc.arg(name),
+    description      = sqlc.arg(description),
+    default_portions = sqlc.arg(default_portions),
+    season           = sqlc.arg(season),
+    photo_url        = sqlc.arg(photo_url),
+    recipe           = sqlc.arg(recipe),
+    allergens        = COALESCE(sqlc.arg(allergens)::text[], '{}'),
+    household_id     = sqlc.arg(household_id)
+WHERE id = sqlc.arg(id)
 RETURNING *;
 
 -- name: DeleteMeal :exec
@@ -30,14 +36,15 @@ DELETE FROM meals
 WHERE id = $1;
 
 -- name: AddMealIngredient :one
-INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit)
-VALUES ($1, $2, $3, $4)
+INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit, optional)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: UpdateMealIngredient :one
 UPDATE meal_ingredients
 SET quantity = $3,
-    unit     = $4
+    unit     = $4,
+    optional = $5
 WHERE meal_id = $1 AND shopping_item_id = $2
 RETURNING *;
 
@@ -56,6 +63,7 @@ SELECT
     mi.shopping_item_id,
     mi.quantity,
     mi.unit,
+    mi.optional,
     si.name           AS ingredient_name,
     si.item_type      AS ingredient_type,
     si.portions_per_unit

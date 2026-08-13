@@ -7,7 +7,8 @@ A Go-based REST API backend for a household shopping and meal planning applicati
 - **User accounts** — registration, login, and session-based authentication with bcrypt password hashing
 - **Households** — create a household, invite others via a shareable code, and manage membership approvals
 - **Shopping list** — add, remove, and categorise items; mark items as "have it" without removing them from the list
-- **Meals & meal planning** — define meals with ingredients, set portion sizes, and link meals to a weekly plan so their ingredients populate the shopping list automatically
+- **Meals & meal planning** — define meals as rich "meal cards" (photo, recipe, allergen tags, and ingredients with optional flags and swap-in option groups), set portion sizes, and link meals to a weekly plan so their ingredients populate the shopping list automatically
+- **Cook review** — on login the user is shown meals planned since their previous visit (capped to under 7 days) and asked which they actually cooked; confirmed meals decrement the pantry automatically
 - **Pantry** — track perishable stock with expiry awareness; a background scheduler marks items as `expiring_soon` or `expired` every hour
 - **Item catalogue** — a typed catalogue of shopping items covering 18 categories (fruit, dairy, meat, bakery, household goods, etc.)
 
@@ -59,7 +60,7 @@ Routes are grouped by feature area and protected by session authentication unles
 | Users | `/users` | Authenticated |
 | Households | `/households` | Authenticated |
 | Shopping list | `/shopping-list` | Authenticated |
-| Meals | `/meals` | Authenticated |
+| Meals | `/meals` | Authenticated; includes `GET /meals/cook-review` and `POST /meals/cook-review/confirm` |
 | Pantry | `/pantry` | Authenticated |
 
 ## Database Migrations

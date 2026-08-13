@@ -139,6 +139,9 @@ type Meal struct {
 	Description     pgtype.Text `json:"description"`
 	DefaultPortions int32       `json:"default_portions"`
 	Season          NullSeason  `json:"season"`
+	PhotoUrl        pgtype.Text `json:"photo_url"`
+	Recipe          pgtype.Text `json:"recipe"`
+	Allergens       []string    `json:"allergens"`
 	HouseholdID     pgtype.Int4 `json:"household_id"`
 }
 
@@ -155,11 +158,23 @@ type MealCook struct {
 	HouseholdID pgtype.Int4 `json:"household_id"`
 }
 
+type MealCookLog struct {
+	ID          int32            `json:"id"`
+	MealID      int32            `json:"meal_id"`
+	CookDate    pgtype.Date      `json:"cook_date"`
+	Made        bool             `json:"made"`
+	HouseholdID pgtype.Int4      `json:"household_id"`
+	UserID      pgtype.Int4      `json:"user_id"`
+	AnsweredBy  pgtype.Int4      `json:"answered_by"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+}
+
 type MealIngredient struct {
 	MealID         int32          `json:"meal_id"`
 	ShoppingItemID int32          `json:"shopping_item_id"`
 	Quantity       pgtype.Numeric `json:"quantity"`
 	Unit           pgtype.Text    `json:"unit"`
+	Optional       bool           `json:"optional"`
 }
 
 type MealOptionGroupEntry struct {
@@ -232,9 +247,11 @@ type ShoppingListHaveIt struct {
 }
 
 type User struct {
-	ID           int32            `json:"id"`
-	Name         string           `json:"name"`
-	Username     string           `json:"username"`
-	PasswordHash string           `json:"password_hash"`
-	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	ID             int32            `json:"id"`
+	Name           string           `json:"name"`
+	Username       string           `json:"username"`
+	PasswordHash   string           `json:"password_hash"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	LastSeenAt     pgtype.Timestamp `json:"last_seen_at"`
+	PreviousSeenAt pgtype.Timestamp `json:"previous_seen_at"`
 }

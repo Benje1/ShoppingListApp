@@ -273,6 +273,34 @@ func registerPlanAndCookRoutes(r *Router, db *pgxpool.Pool) {
 		},
 	})
 
+	// GET /meals/cook-review — planned meals since last login to confirm as made
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path: "/cook-review", Method: "GET", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(r *http.Request, _ struct{}) (any, error) {
+				sess, err := authentication.SessionFromContext(r)
+				if err != nil {
+					return nil, err
+				}
+				return getCookReview(r.Context(), db, sess.UserID, sess.FirstHouseholdID())
+			}
+		},
+	})
+
+	// POST /meals/cook-review/confirm — record answers, decrement pantry for made meals
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[CookReviewConfirmInput]{
+		Path: "/cook-review/confirm", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, CookReviewConfirmInput) (any, error) {
+			return func(r *http.Request, input CookReviewConfirmInput) (any, error) {
+				sess, err := authentication.SessionFromContext(r)
+				if err != nil {
+					return nil, err
+				}
+				return confirmCookReview(r.Context(), db, sess.UserID, input)
+			}
+		},
+	})
+
 	// GET /meals/cooks?id=<meal_id> — list cooks for a meal
 	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
 		Path: "/cooks", Method: "GET", Public: false,
