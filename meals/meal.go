@@ -8,6 +8,7 @@ import (
 	sqlc "weekly-shopping-app/database/sqlc"
 	"weekly-shopping-app/internal/allergens"
 	"weekly-shopping-app/internal/api/httpx"
+	"weekly-shopping-app/internal/dietary"
 	"weekly-shopping-app/internal/logger"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -17,15 +18,29 @@ import (
 // ── Response types ────────────────────────────────────────────────────────────
 
 type IngredientResponse struct {
-	ItemID          int32                   `json:"item_id"`
-	ItemName        string                  `json:"item_name"`
-	ItemType        string                  `json:"item_type"`
-	Quantity        float64                 `json:"quantity"`
-	Unit            string                  `json:"unit"`
-	PortionsPerUnit int32                   `json:"portions_per_unit"`
-	Optional        bool                    `json:"optional"`
-	Allergens       []string                `json:"allergens"`       // tags on the item itself
-	SubIngredients  []SubIngredientResponse `json:"sub_ingredients"` // lightweight breakdown
+	ItemID          int32   `json:"item_id"`
+	ItemName        string  `json:"item_name"`
+	ItemType        string  `json:"item_type"`
+	Quantity        float64 `json:"quantity"`
+	Unit            string  `json:"unit"`
+	PortionsPerUnit int32   `json:"portions_per_unit"`
+	Optional        bool    `json:"optional"`
+	// QuantityPerPortion is the amount of BaseUnit needed per portion. Nil when
+	// the meal card still uses the legacy whole-batch Quantity.
+	QuantityPerPortion *float64 `json:"quantity_per_portion"`
+	// DietaryTags are per-meal-card variant requirements for this ingredient
+	// (e.g. "gluten_free"). Always a (possibly empty) array.
+	DietaryTags []string `json:"dietary_tags"`
+	// How the underlying shopping item is sold, so the card can show pack maths.
+	BaseUnit  string   `json:"base_unit"`  // "" means a plain countable unit
+	PackSize  float64  `json:"pack_size"`  // base units per pack (defaults to 1)
+	SoldLoose bool     `json:"sold_loose"` // can also be bought as single units
+	Allergens []string `json:"allergens"`  // tags on the item itself
+	// PacksToBuy is the whole packs the shopping list would add for this meal at
+	// its default portions, using QuantityPerPortion × default_portions ÷ PackSize
+	// rounded up. 0 when the ingredient still uses the legacy Quantity.
+	PacksToBuy     int32                   `json:"packs_to_buy"`
+	SubIngredients []SubIngredientResponse `json:"sub_ingredients"` // lightweight breakdown
 }
 
 // SubIngredientResponse is one constituent of a shopping item (name + allergens).
@@ -95,6 +110,11 @@ type IngredientInput struct {
 	Quantity float64 `json:"quantity"`
 	Unit     string  `json:"unit"`
 	Optional bool    `json:"optional"`
+	// QuantityPerPortion, when set, is the per-portion amount in the item's
+	// base_unit; the shopping list scales it by portions and converts to packs.
+	QuantityPerPortion *float64 `json:"quantity_per_portion"`
+	// DietaryTags flags the variant of this item this meal needs (e.g. gluten_free).
+	DietaryTags []string `json:"dietary_tags"`
 }
 
 type UpdateMealInput struct {
@@ -110,17 +130,21 @@ type UpdateMealInput struct {
 }
 
 type AddIngredientInput struct {
-	ItemID   int32   `json:"item_id"`
-	Quantity float64 `json:"quantity"`
-	Unit     string  `json:"unit"`
-	Optional bool    `json:"optional"`
+	ItemID             int32    `json:"item_id"`
+	Quantity           float64  `json:"quantity"`
+	Unit               string   `json:"unit"`
+	Optional           bool     `json:"optional"`
+	QuantityPerPortion *float64 `json:"quantity_per_portion"`
+	DietaryTags        []string `json:"dietary_tags"`
 }
 
 type UpdateIngredientInput struct {
-	ItemID   int32   `json:"item_id"`
-	Quantity float64 `json:"quantity"`
-	Unit     string  `json:"unit"`
-	Optional bool    `json:"optional"`
+	ItemID             int32    `json:"item_id"`
+	Quantity           float64  `json:"quantity"`
+	Unit               string   `json:"unit"`
+	Optional           bool     `json:"optional"`
+	QuantityPerPortion *float64 `json:"quantity_per_portion"`
+	DietaryTags        []string `json:"dietary_tags"`
 }
 
 type RemoveIngredientInput struct {
@@ -231,6 +255,68 @@ func numericToFloat(n pgtype.Numeric) float64 {
 	return f.Float64
 }
 
+// numericToFloatPtr returns nil for a NULL numeric, otherwise the value. Used
+// for genuinely optional fields (quantity_per_portion) where absence is
+// meaningful and must not be coerced to a default.
+func numericToFloatPtr(n pgtype.Numeric) *float64 {
+	if !n.Valid {
+		return nil
+	}
+	f, _ := n.Float64Value()
+	v := f.Float64
+	return &v
+}
+
+// packSizeOrOne treats a NULL/zero pack size as 1 so pack maths never divides
+// by zero and legacy items behave as before.
+func packSizeOrOne(n pgtype.Numeric) float64 {
+	if !n.Valid {
+		return 1
+	}
+	f, _ := n.Float64Value()
+	if f.Float64 <= 0 {
+		return 1
+	}
+	return f.Float64
+}
+
+// nullableNumericPtr converts an optional per-portion amount into a pgtype for
+// storage. A nil pointer (or non-positive value) becomes SQL NULL.
+func nullableNumericPtr(f *float64) pgtype.Numeric {
+	if f == nil || *f <= 0 {
+		return pgtype.Numeric{Valid: false}
+	}
+	n := pgtype.Numeric{}
+	_ = n.Scan(fmt.Sprintf("%.2f", *f))
+	return n
+}
+
+// sanitizeDietary validates dietary-variant tags against the shared allowed set,
+// surfacing an unknown tag as a client error (HTTP 400).
+func sanitizeDietary(in []string) ([]string, error) {
+	out, err := dietary.Sanitize(in)
+	if err != nil {
+		return nil, httpx.NewClientError(err)
+	}
+	return out, nil
+}
+
+// packsToBuy converts a per-portion amount into whole packs for the given number
+// of portions: ceil(perPortion × portions ÷ packSize). Returns 0 when the
+// ingredient has no per-portion amount (legacy whole-batch quantity).
+func packsToBuy(perPortion *float64, portions int32, packSize float64) int32 {
+	if perPortion == nil || *perPortion <= 0 {
+		return 0
+	}
+	if portions <= 0 {
+		portions = 1
+	}
+	if packSize <= 0 {
+		packSize = 1
+	}
+	return int32(math.Ceil((*perPortion * float64(portions)) / packSize))
+}
+
 func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) MealResponse {
 	desc := ""
 	if meal.Description.Valid {
@@ -250,16 +336,25 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 		}
 		itemAllergens := allergensOrEmpty(r.IngredientAllergens)
 		derived = allergens.Union(derived, itemAllergens)
+
+		perPortion := numericToFloatPtr(r.QuantityPerPortion)
+		packSize := packSizeOrOne(r.PackSize)
 		ingredients = append(ingredients, IngredientResponse{
-			ItemID:          r.ShoppingItemID,
-			ItemName:        r.IngredientName,
-			ItemType:        string(r.IngredientType),
-			Quantity:        numericToFloat(r.Quantity),
-			Unit:            unit,
-			PortionsPerUnit: r.PortionsPerUnit,
-			Optional:        r.Optional,
-			Allergens:       itemAllergens,
-			SubIngredients:  []SubIngredientResponse{},
+			ItemID:             r.ShoppingItemID,
+			ItemName:           r.IngredientName,
+			ItemType:           string(r.IngredientType),
+			Quantity:           numericToFloat(r.Quantity),
+			Unit:               unit,
+			PortionsPerUnit:    r.PortionsPerUnit,
+			Optional:           r.Optional,
+			QuantityPerPortion: perPortion,
+			DietaryTags:        dietary.OrEmpty(r.DietaryTags),
+			BaseUnit:           textOrEmpty(r.BaseUnit),
+			PackSize:           packSize,
+			SoldLoose:          r.SoldLoose,
+			PacksToBuy:         packsToBuy(perPortion, meal.DefaultPortions, packSize),
+			Allergens:          itemAllergens,
+			SubIngredients:     []SubIngredientResponse{},
 		})
 	}
 	resp := MealResponse{
@@ -443,12 +538,18 @@ func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*
 	}
 	// Add any ingredients provided at creation time
 	for _, ing := range input.Ingredients {
+		diet, err := sanitizeDietary(ing.DietaryTags)
+		if err != nil {
+			return nil, err
+		}
 		if _, err := q.AddMealIngredient(ctx, sqlc.AddMealIngredientParams{
-			MealID:         meal.ID,
-			ShoppingItemID: ing.ItemID,
-			Quantity:       toNumeric(ing.Quantity),
-			Unit:           toText(ing.Unit),
-			Optional:       ing.Optional,
+			MealID:             meal.ID,
+			ShoppingItemID:     ing.ItemID,
+			Quantity:           toNumeric(ing.Quantity),
+			Unit:               toText(ing.Unit),
+			Optional:           ing.Optional,
+			QuantityPerPortion: nullableNumericPtr(ing.QuantityPerPortion),
+			DietaryTags:        diet,
 		}); err != nil {
 			return nil, logger.WithStack(fmt.Errorf("adding ingredient %d: %w", ing.ItemID, err))
 		}
@@ -487,13 +588,19 @@ func deleteMeal(ctx context.Context, db *pgxpool.Pool, id int32) error {
 }
 
 func addIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input AddIngredientInput) (*MealResponse, error) {
+	diet, err := sanitizeDietary(input.DietaryTags)
+	if err != nil {
+		return nil, err
+	}
 	q := sqlc.New(db)
 	if _, err := q.AddMealIngredient(ctx, sqlc.AddMealIngredientParams{
-		MealID:         mealID,
-		ShoppingItemID: input.ItemID,
-		Quantity:       toNumeric(input.Quantity),
-		Unit:           toText(input.Unit),
-		Optional:       input.Optional,
+		MealID:             mealID,
+		ShoppingItemID:     input.ItemID,
+		Quantity:           toNumeric(input.Quantity),
+		Unit:               toText(input.Unit),
+		Optional:           input.Optional,
+		QuantityPerPortion: nullableNumericPtr(input.QuantityPerPortion),
+		DietaryTags:        diet,
 	}); err != nil {
 		return nil, err
 	}
@@ -501,13 +608,19 @@ func addIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input Ad
 }
 
 func updateIngredient(ctx context.Context, db *pgxpool.Pool, mealID int32, input UpdateIngredientInput) (*MealResponse, error) {
+	diet, err := sanitizeDietary(input.DietaryTags)
+	if err != nil {
+		return nil, err
+	}
 	q := sqlc.New(db)
 	if _, err := q.UpdateMealIngredient(ctx, sqlc.UpdateMealIngredientParams{
-		MealID:         mealID,
-		ShoppingItemID: input.ItemID,
-		Quantity:       toNumeric(input.Quantity),
-		Unit:           toText(input.Unit),
-		Optional:       input.Optional,
+		MealID:             mealID,
+		ShoppingItemID:     input.ItemID,
+		Quantity:           toNumeric(input.Quantity),
+		Unit:               toText(input.Unit),
+		Optional:           input.Optional,
+		QuantityPerPortion: nullableNumericPtr(input.QuantityPerPortion),
+		DietaryTags:        diet,
 	}); err != nil {
 		return nil, err
 	}
@@ -804,6 +917,18 @@ func addMealIngredientsToShoppingList(ctx context.Context, db *pgxpool.Pool, mea
 			return err
 		}
 		for _, ing := range ings {
+			// Prefer precise per-portion maths when the meal card provides it:
+			// packs = (per_portion × default_portions) ÷ pack_size. Fall back to
+			// the legacy whole-batch quantity (already expressed in packs).
+			if perPortion := numericToFloatPtr(ing.QuantityPerPortion); perPortion != nil && *perPortion > 0 {
+				portions := ing.DefaultPortions
+				if portions <= 0 {
+					portions = 1
+				}
+				packSize := packSizeOrOne(ing.PackSize)
+				totals[ing.ShoppingItemID] += (*perPortion * float64(portions)) / packSize
+				continue
+			}
 			qty := numericToFloat(ing.Quantity)
 			if qty <= 0 {
 				qty = 1

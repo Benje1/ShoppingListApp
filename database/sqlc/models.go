@@ -170,11 +170,13 @@ type MealCookLog struct {
 }
 
 type MealIngredient struct {
-	MealID         int32          `json:"meal_id"`
-	ShoppingItemID int32          `json:"shopping_item_id"`
-	Quantity       pgtype.Numeric `json:"quantity"`
-	Unit           pgtype.Text    `json:"unit"`
-	Optional       bool           `json:"optional"`
+	MealID             int32          `json:"meal_id"`
+	ShoppingItemID     int32          `json:"shopping_item_id"`
+	Quantity           pgtype.Numeric `json:"quantity"`
+	Unit               pgtype.Text    `json:"unit"`
+	Optional           bool           `json:"optional"`
+	QuantityPerPortion pgtype.Numeric `json:"quantity_per_portion"`
+	DietaryTags        []string       `json:"dietary_tags"`
 }
 
 type MealOptionGroupEntry struct {
@@ -228,6 +230,9 @@ type ShoppingItem struct {
 	PortionsPerUnit int32            `json:"portions_per_unit"`
 	ShelfLifeDays   pgtype.Int4      `json:"shelf_life_days"`
 	Allergens       []string         `json:"allergens"`
+	BaseUnit        pgtype.Text      `json:"base_unit"`
+	PackSize        pgtype.Numeric   `json:"pack_size"`
+	SoldLoose       bool             `json:"sold_loose"`
 }
 
 type ShoppingList struct {

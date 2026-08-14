@@ -31,17 +31,23 @@ func (q *Queries) AddMealCook(ctx context.Context, arg AddMealCookParams) error 
 }
 
 const addMealIngredient = `-- name: AddMealIngredient :one
-INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit, optional)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING meal_id, shopping_item_id, quantity, unit, optional
+INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit, optional, quantity_per_portion, dietary_tags)
+VALUES (
+    $1, $2, $3, $4,
+    $5, $6,
+    COALESCE($7::text[], '{}')
+)
+RETURNING meal_id, shopping_item_id, quantity, unit, optional, quantity_per_portion, dietary_tags
 `
 
 type AddMealIngredientParams struct {
-	MealID         int32          `json:"meal_id"`
-	ShoppingItemID int32          `json:"shopping_item_id"`
-	Quantity       pgtype.Numeric `json:"quantity"`
-	Unit           pgtype.Text    `json:"unit"`
-	Optional       bool           `json:"optional"`
+	MealID             int32          `json:"meal_id"`
+	ShoppingItemID     int32          `json:"shopping_item_id"`
+	Quantity           pgtype.Numeric `json:"quantity"`
+	Unit               pgtype.Text    `json:"unit"`
+	Optional           bool           `json:"optional"`
+	QuantityPerPortion pgtype.Numeric `json:"quantity_per_portion"`
+	DietaryTags        []string       `json:"dietary_tags"`
 }
 
 func (q *Queries) AddMealIngredient(ctx context.Context, arg AddMealIngredientParams) (MealIngredient, error) {
@@ -51,6 +57,8 @@ func (q *Queries) AddMealIngredient(ctx context.Context, arg AddMealIngredientPa
 		arg.Quantity,
 		arg.Unit,
 		arg.Optional,
+		arg.QuantityPerPortion,
+		arg.DietaryTags,
 	)
 	var i MealIngredient
 	err := row.Scan(
@@ -59,6 +67,8 @@ func (q *Queries) AddMealIngredient(ctx context.Context, arg AddMealIngredientPa
 		&i.Quantity,
 		&i.Unit,
 		&i.Optional,
+		&i.QuantityPerPortion,
+		&i.DietaryTags,
 	)
 	return i, err
 }
@@ -293,10 +303,15 @@ SELECT
     mi.quantity,
     mi.unit,
     mi.optional,
+    mi.quantity_per_portion,
+    mi.dietary_tags,
     si.name           AS ingredient_name,
     si.item_type      AS ingredient_type,
     si.portions_per_unit,
-    si.allergens      AS ingredient_allergens
+    si.allergens      AS ingredient_allergens,
+    si.base_unit,
+    si.pack_size,
+    si.sold_loose
 FROM meals m
 JOIN meal_ingredients mi ON mi.meal_id = m.id
 JOIN shopping_items si   ON si.id = mi.shopping_item_id
@@ -314,10 +329,15 @@ type GetMealWithIngredientsRow struct {
 	Quantity            pgtype.Numeric   `json:"quantity"`
 	Unit                pgtype.Text      `json:"unit"`
 	Optional            bool             `json:"optional"`
+	QuantityPerPortion  pgtype.Numeric   `json:"quantity_per_portion"`
+	DietaryTags         []string         `json:"dietary_tags"`
 	IngredientName      string           `json:"ingredient_name"`
 	IngredientType      ShoppingItemType `json:"ingredient_type"`
 	PortionsPerUnit     int32            `json:"portions_per_unit"`
 	IngredientAllergens []string         `json:"ingredient_allergens"`
+	BaseUnit            pgtype.Text      `json:"base_unit"`
+	PackSize            pgtype.Numeric   `json:"pack_size"`
+	SoldLoose           bool             `json:"sold_loose"`
 }
 
 // Returns one row per ingredient; join in application code to build the full meal.
@@ -340,10 +360,15 @@ func (q *Queries) GetMealWithIngredients(ctx context.Context, id int32) ([]GetMe
 			&i.Quantity,
 			&i.Unit,
 			&i.Optional,
+			&i.QuantityPerPortion,
+			&i.DietaryTags,
 			&i.IngredientName,
 			&i.IngredientType,
 			&i.PortionsPerUnit,
 			&i.IngredientAllergens,
+			&i.BaseUnit,
+			&i.PackSize,
+			&i.SoldLoose,
 		); err != nil {
 			return nil, err
 		}
@@ -687,28 +712,34 @@ func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, e
 
 const updateMealIngredient = `-- name: UpdateMealIngredient :one
 UPDATE meal_ingredients
-SET quantity = $3,
-    unit     = $4,
-    optional = $5
-WHERE meal_id = $1 AND shopping_item_id = $2
-RETURNING meal_id, shopping_item_id, quantity, unit, optional
+SET quantity             = $1,
+    unit                 = $2,
+    optional             = $3,
+    quantity_per_portion = $4,
+    dietary_tags         = COALESCE($5::text[], '{}')
+WHERE meal_id = $6 AND shopping_item_id = $7
+RETURNING meal_id, shopping_item_id, quantity, unit, optional, quantity_per_portion, dietary_tags
 `
 
 type UpdateMealIngredientParams struct {
-	MealID         int32          `json:"meal_id"`
-	ShoppingItemID int32          `json:"shopping_item_id"`
-	Quantity       pgtype.Numeric `json:"quantity"`
-	Unit           pgtype.Text    `json:"unit"`
-	Optional       bool           `json:"optional"`
+	Quantity           pgtype.Numeric `json:"quantity"`
+	Unit               pgtype.Text    `json:"unit"`
+	Optional           bool           `json:"optional"`
+	QuantityPerPortion pgtype.Numeric `json:"quantity_per_portion"`
+	DietaryTags        []string       `json:"dietary_tags"`
+	MealID             int32          `json:"meal_id"`
+	ShoppingItemID     int32          `json:"shopping_item_id"`
 }
 
 func (q *Queries) UpdateMealIngredient(ctx context.Context, arg UpdateMealIngredientParams) (MealIngredient, error) {
 	row := q.db.QueryRow(ctx, updateMealIngredient,
-		arg.MealID,
-		arg.ShoppingItemID,
 		arg.Quantity,
 		arg.Unit,
 		arg.Optional,
+		arg.QuantityPerPortion,
+		arg.DietaryTags,
+		arg.MealID,
+		arg.ShoppingItemID,
 	)
 	var i MealIngredient
 	err := row.Scan(
@@ -717,6 +748,8 @@ func (q *Queries) UpdateMealIngredient(ctx context.Context, arg UpdateMealIngred
 		&i.Quantity,
 		&i.Unit,
 		&i.Optional,
+		&i.QuantityPerPortion,
+		&i.DietaryTags,
 	)
 	return i, err
 }

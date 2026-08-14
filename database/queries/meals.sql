@@ -36,16 +36,22 @@ DELETE FROM meals
 WHERE id = $1;
 
 -- name: AddMealIngredient :one
-INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit, optional)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit, optional, quantity_per_portion, dietary_tags)
+VALUES (
+    sqlc.arg(meal_id), sqlc.arg(shopping_item_id), sqlc.arg(quantity), sqlc.arg(unit),
+    sqlc.arg(optional), sqlc.narg(quantity_per_portion),
+    COALESCE(sqlc.arg(dietary_tags)::text[], '{}')
+)
 RETURNING *;
 
 -- name: UpdateMealIngredient :one
 UPDATE meal_ingredients
-SET quantity = $3,
-    unit     = $4,
-    optional = $5
-WHERE meal_id = $1 AND shopping_item_id = $2
+SET quantity             = sqlc.arg(quantity),
+    unit                 = sqlc.arg(unit),
+    optional             = sqlc.arg(optional),
+    quantity_per_portion = sqlc.narg(quantity_per_portion),
+    dietary_tags         = COALESCE(sqlc.arg(dietary_tags)::text[], '{}')
+WHERE meal_id = sqlc.arg(meal_id) AND shopping_item_id = sqlc.arg(shopping_item_id)
 RETURNING *;
 
 -- name: RemoveMealIngredient :exec
@@ -64,10 +70,15 @@ SELECT
     mi.quantity,
     mi.unit,
     mi.optional,
+    mi.quantity_per_portion,
+    mi.dietary_tags,
     si.name           AS ingredient_name,
     si.item_type      AS ingredient_type,
     si.portions_per_unit,
-    si.allergens      AS ingredient_allergens
+    si.allergens      AS ingredient_allergens,
+    si.base_unit,
+    si.pack_size,
+    si.sold_loose
 FROM meals m
 JOIN meal_ingredients mi ON mi.meal_id = m.id
 JOIN shopping_items si   ON si.id = mi.shopping_item_id

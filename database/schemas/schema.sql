@@ -39,7 +39,13 @@ CREATE TABLE shopping_items (
     portions_per_unit INT NOT NULL DEFAULT 1,
     shelf_life_days   INT,
     -- Structured allergen tags, validated in application code against a fixed set.
-    allergens         TEXT[] NOT NULL DEFAULT '{}'
+    allergens         TEXT[] NOT NULL DEFAULT '{}',
+    -- How the item is sold. base_unit is the measurement unit ('g','ml','tin',
+    -- 'unit', ...); pack_size is how many base units are in one pack; sold_loose
+    -- marks items that can also be bought as single base units.
+    base_unit         TEXT,
+    pack_size         NUMERIC(10, 2) NOT NULL DEFAULT 1,
+    sold_loose        BOOLEAN NOT NULL DEFAULT false
 );
 
 -- Lightweight breakdown of a shopping item into its constituent parts
@@ -127,6 +133,12 @@ CREATE TABLE meal_ingredients (
     quantity         NUMERIC(10, 2) NOT NULL DEFAULT 1,
     unit             TEXT,
     optional         BOOLEAN NOT NULL DEFAULT false,
+    -- Precise per-portion amount in the item's base_unit (e.g. 100 g pasta per
+    -- person). NULL falls back to `quantity` as a whole-batch amount.
+    quantity_per_portion NUMERIC(10, 2),
+    -- Per-meal-card dietary variant requirements for this ingredient
+    -- (e.g. use the gluten-free pasta). Validated in application code.
+    dietary_tags     TEXT[] NOT NULL DEFAULT '{}',
     PRIMARY KEY (meal_id, shopping_item_id)
 );
 
