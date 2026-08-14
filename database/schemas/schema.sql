@@ -37,8 +37,23 @@ CREATE TABLE shopping_items (
     item_type         shopping_item_type NOT NULL,
     text_id           TEXT UNIQUE,
     portions_per_unit INT NOT NULL DEFAULT 1,
-    shelf_life_days   INT
+    shelf_life_days   INT,
+    -- Structured allergen tags, validated in application code against a fixed set.
+    allergens         TEXT[] NOT NULL DEFAULT '{}'
 );
+
+-- Lightweight breakdown of a shopping item into its constituent parts
+-- (e.g. a stock cube → salt, yeast extract, celery). Name + allergens only;
+-- no quantity, unit, pantry tracking or purchasing. One level deep.
+CREATE TABLE sub_ingredients (
+    id               SERIAL PRIMARY KEY,
+    shopping_item_id INT  NOT NULL REFERENCES shopping_items(id) ON DELETE CASCADE,
+    name             TEXT NOT NULL,
+    allergens        TEXT[] NOT NULL DEFAULT '{}',
+    sort_order       INT  NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_sub_ingredients_item ON sub_ingredients (shopping_item_id);
 
 CREATE TABLE shopping_list (
     id               SERIAL PRIMARY KEY,

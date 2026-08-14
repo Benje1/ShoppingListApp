@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 
 	sqlc "weekly-shopping-app/database/sqlc"
+	"weekly-shopping-app/internal/allergens"
 	"weekly-shopping-app/internal/api/httpx"
 	"weekly-shopping-app/internal/logger"
 
@@ -17,13 +17,22 @@ import (
 // ── Response types ────────────────────────────────────────────────────────────
 
 type IngredientResponse struct {
-	ItemID          int32   `json:"item_id"`
-	ItemName        string  `json:"item_name"`
-	ItemType        string  `json:"item_type"`
-	Quantity        float64 `json:"quantity"`
-	Unit            string  `json:"unit"`
-	PortionsPerUnit int32   `json:"portions_per_unit"`
-	Optional        bool    `json:"optional"`
+	ItemID          int32                   `json:"item_id"`
+	ItemName        string                  `json:"item_name"`
+	ItemType        string                  `json:"item_type"`
+	Quantity        float64                 `json:"quantity"`
+	Unit            string                  `json:"unit"`
+	PortionsPerUnit int32                   `json:"portions_per_unit"`
+	Optional        bool                    `json:"optional"`
+	Allergens       []string                `json:"allergens"`       // tags on the item itself
+	SubIngredients  []SubIngredientResponse `json:"sub_ingredients"` // lightweight breakdown
+}
+
+// SubIngredientResponse is one constituent of a shopping item (name + allergens).
+type SubIngredientResponse struct {
+	ID        int32    `json:"id"`
+	Name      string   `json:"name"`
+	Allergens []string `json:"allergens"`
 }
 
 type ParentRef struct {
@@ -32,14 +41,18 @@ type ParentRef struct {
 }
 
 type MealResponse struct {
-	ID              int32    `json:"id"`
-	Name            string   `json:"name"`
-	Description     string   `json:"description"`
-	DefaultPortions int32    `json:"default_portions"`
-	Season          string   `json:"season"`    // empty string means no season set
-	PhotoURL        string   `json:"photo_url"` // empty string means no photo
-	Recipe          string   `json:"recipe"`    // empty string means no recipe
-	Allergens       []string `json:"allergens"` // structured allergen tags
+	ID              int32  `json:"id"`
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	DefaultPortions int32  `json:"default_portions"`
+	Season          string `json:"season"`    // empty string means no season set
+	PhotoURL        string `json:"photo_url"` // empty string means no photo
+	Recipe          string `json:"recipe"`    // empty string means no recipe
+	// Allergens is the derived union: the meal's manual tags plus every tag on
+	// its ingredients and their sub-ingredients. ManualAllergens holds only the
+	// tags entered directly on the meal (so the UI can edit them independently).
+	Allergens       []string `json:"allergens"`
+	ManualAllergens []string `json:"manual_allergens"`
 	// HouseholdID is nil for global/shared meals.
 	HouseholdID  *int32                     `json:"household_id"`
 	Ingredients  []IngredientResponse       `json:"ingredients"`
@@ -141,7 +154,7 @@ type OptionGroupEntryResponse struct {
 // Exactly one of ItemID or SubMealID must be non-zero.
 type AddOptionGroupEntryInput struct {
 	OptionGroup string `json:"option_group"`
-	OptionType  string `json:"option_type"`  // "one_of" | "many_of"
+	OptionType  string `json:"option_type"` // "one_of" | "many_of"
 	SortOrder   int32  `json:"sort_order"`
 	ItemID      int32  `json:"item_id"`     // 0 = not set
 	SubMealID   int32  `json:"sub_meal_id"` // 0 = not set
@@ -181,10 +194,7 @@ func textOrEmpty(t pgtype.Text) string {
 
 // allergensOrEmpty guarantees a non-nil slice so JSON encodes [] rather than null.
 func allergensOrEmpty(a []string) []string {
-	if a == nil {
-		return []string{}
-	}
-	return a
+	return allergens.OrEmpty(a)
 }
 
 func toNumeric(f float64) pgtype.Numeric {
@@ -193,31 +203,14 @@ func toNumeric(f float64) pgtype.Numeric {
 	return n
 }
 
-// allowedAllergens is the fixed set of allergen tags a meal may carry
-// (the EU 14 major allergens). Kept in sync with the frontend chip list.
-var allowedAllergens = map[string]bool{
-	"gluten": true, "crustaceans": true, "eggs": true, "fish": true,
-	"peanuts": true, "soy": true, "dairy": true, "nuts": true,
-	"celery": true, "mustard": true, "sesame": true, "sulphites": true,
-	"lupin": true, "molluscs": true,
-}
-
-// sanitizeAllergens lowercases, de-duplicates, and drops any tag not in the
+// sanitizeAllergens validates and normalises allergen tags against the shared
 // allowed set. Returns a non-nil (possibly empty) slice so the DB column is
-// never NULL and the JSON response is always an array.
+// never NULL and the JSON response is always an array. An unknown tag is
+// surfaced as a client error (HTTP 400).
 func sanitizeAllergens(in []string) ([]string, error) {
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, a := range in {
-		tag := strings.ToLower(strings.TrimSpace(a))
-		if tag == "" || seen[tag] {
-			continue
-		}
-		if !allowedAllergens[tag] {
-			return nil, httpx.NewClientError(fmt.Errorf("unknown allergen %q", a))
-		}
-		seen[tag] = true
-		out = append(out, tag)
+	out, err := allergens.Sanitize(in)
+	if err != nil {
+		return nil, httpx.NewClientError(err)
 	}
 	return out, nil
 }
@@ -243,12 +236,20 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 	if meal.Description.Valid {
 		desc = meal.Description.String
 	}
+	// Manual tags entered directly on the meal, plus a running union that will
+	// grow to include every ingredient (and later, in getMeal, sub-ingredient)
+	// allergen so the card can show one complete list.
+	manual := allergensOrEmpty(meal.Allergens)
+	derived := allergens.Union(manual)
+
 	ingredients := make([]IngredientResponse, 0, len(rows))
 	for _, r := range rows {
 		unit := ""
 		if r.Unit.Valid {
 			unit = r.Unit.String
 		}
+		itemAllergens := allergensOrEmpty(r.IngredientAllergens)
+		derived = allergens.Union(derived, itemAllergens)
 		ingredients = append(ingredients, IngredientResponse{
 			ItemID:          r.ShoppingItemID,
 			ItemName:        r.IngredientName,
@@ -257,6 +258,8 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 			Unit:            unit,
 			PortionsPerUnit: r.PortionsPerUnit,
 			Optional:        r.Optional,
+			Allergens:       itemAllergens,
+			SubIngredients:  []SubIngredientResponse{},
 		})
 	}
 	resp := MealResponse{
@@ -266,7 +269,8 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 		DefaultPortions: meal.DefaultPortions,
 		PhotoURL:        textOrEmpty(meal.PhotoUrl),
 		Recipe:          textOrEmpty(meal.Recipe),
-		Allergens:       allergensOrEmpty(meal.Allergens),
+		Allergens:       derived,
+		ManualAllergens: manual,
 		Ingredients:     ingredients,
 		Cooks:           []CookResponse{},
 		Components:      []ComponentResponse{},
@@ -281,6 +285,35 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 		resp.HouseholdID = &hid
 	}
 	return resp
+}
+
+// attachSubIngredients groups the meal's sub-ingredient rows by shopping item,
+// hangs them off the matching ingredient, and folds their allergens into the
+// meal's derived allergen union so the card reflects the full breakdown.
+func attachSubIngredients(resp *MealResponse, rows []sqlc.SubIngredient) {
+	if len(rows) == 0 {
+		return
+	}
+	byItem := make(map[int32][]SubIngredientResponse, len(rows))
+	for _, s := range rows {
+		byItem[s.ShoppingItemID] = append(byItem[s.ShoppingItemID], SubIngredientResponse{
+			ID:        s.ID,
+			Name:      s.Name,
+			Allergens: allergensOrEmpty(s.Allergens),
+		})
+	}
+	derived := resp.Allergens
+	for i := range resp.Ingredients {
+		subs, ok := byItem[resp.Ingredients[i].ItemID]
+		if !ok {
+			continue
+		}
+		resp.Ingredients[i].SubIngredients = subs
+		for _, s := range subs {
+			derived = allergens.Union(derived, s.Allergens)
+		}
+	}
+	resp.Allergens = derived
 }
 
 // ── Business logic ────────────────────────────────────────────────────────────
@@ -303,7 +336,7 @@ func listMeals(ctx context.Context, db *pgxpool.Pool, householdID pgtype.Int4) (
 			Description:     desc,
 			DefaultPortions: r.DefaultPortions,
 			PhotoURL:        textOrEmpty(r.PhotoUrl),
-			Allergens:       allergensOrEmpty(r.Allergens),
+			Allergens:       allergensOrEmpty(r.DerivedAllergens),
 			IngredientCount: r.IngredientCount,
 		}
 		if r.Season.Valid {
@@ -336,7 +369,12 @@ func getMeal(ctx context.Context, db *pgxpool.Pool, id int32) (*MealResponse, er
 	if err != nil {
 		return nil, logger.WithStack(err)
 	}
+	subRows, err := q.ListSubIngredientsForMeal(ctx, id)
+	if err != nil {
+		return nil, logger.WithStack(err)
+	}
 	r := buildMealResponse(meal, rows)
+	attachSubIngredients(&r, subRows)
 	r.Cooks = make([]CookResponse, len(cookRows))
 	for i, c := range cookRows {
 		cr := CookResponse{ID: c.ID, Name: c.Name, Username: c.Username}
@@ -633,11 +671,11 @@ type MealPlanDayResponse struct {
 }
 
 type SetMealPlanInput struct {
-	DayName     string  `json:"day_name"`
-	MealID      int32   `json:"meal_id"`
-	CookUserID  int32   `json:"cook_user_id"` // 0 = no cook assigned
-	Scope       string  `json:"scope"`
-	HouseholdID int32   `json:"household_id"`
+	DayName     string `json:"day_name"`
+	MealID      int32  `json:"meal_id"`
+	CookUserID  int32  `json:"cook_user_id"` // 0 = no cook assigned
+	Scope       string `json:"scope"`
+	HouseholdID int32  `json:"household_id"`
 	// IncludedOptionEntries lists the IDs of option group entries the user has
 	// chosen to include when adding this meal to the plan. Each ID corresponds
 	// to a row in meal_option_group_entries. Required entries (no option group)

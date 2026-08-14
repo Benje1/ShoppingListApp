@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"weekly-shopping-app/authentication"
 	sqlc "weekly-shopping-app/database/sqlc"
+	"weekly-shopping-app/internal/allergens"
 	"weekly-shopping-app/internal/api/httpx"
 	"weekly-shopping-app/internal/logger"
 
@@ -52,6 +54,58 @@ func RegisterShoppingListRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(
 				}
 				input.ID = id
 				return updateItemInList(r.Context(), db, input)
+			}
+		},
+	})
+
+	// GET /shopping/items/sub-ingredients?item_id= — sub-ingredients for one item
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path: "/items/sub-ingredients", Method: "GET", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(r *http.Request, _ struct{}) (any, error) {
+				var itemID int32
+				if _, err := fmt.Sscanf(r.URL.Query().Get("item_id"), "%d", &itemID); err != nil || itemID <= 0 {
+					return nil, httpx.NewClientError(fmt.Errorf("valid item_id query parameter is required"))
+				}
+				return listSubIngredients(r.Context(), db, itemID)
+			}
+		},
+	})
+
+	// POST /shopping/items/sub-ingredients/add — attach a sub-ingredient to an item
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[SubIngredientInput]{
+		Path: "/items/sub-ingredients/add", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, SubIngredientInput) (any, error) {
+			return func(r *http.Request, input SubIngredientInput) (any, error) {
+				return addSubIngredient(r.Context(), db, input)
+			}
+		},
+	})
+
+	// POST /shopping/items/sub-ingredients/update — edit a sub-ingredient
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[SubIngredientInput]{
+		Path: "/items/sub-ingredients/update", Method: "POST", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, SubIngredientInput) (any, error) {
+			return func(r *http.Request, input SubIngredientInput) (any, error) {
+				return updateSubIngredient(r.Context(), db, input)
+			}
+		},
+	})
+
+	// DELETE /shopping/items/sub-ingredients/remove?id= — remove a sub-ingredient
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path: "/items/sub-ingredients/remove", Method: "DELETE", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(r *http.Request, _ struct{}) (any, error) {
+				var id int32
+				if _, err := fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id); err != nil || id <= 0 {
+					return nil, httpx.NewClientError(fmt.Errorf("valid id query parameter is required"))
+				}
+				q := sqlc.New(db)
+				if err := q.RemoveSubIngredient(r.Context(), id); err != nil {
+					return nil, err
+				}
+				return map[string]string{"status": "removed"}, nil
 			}
 		},
 	})
@@ -431,13 +485,91 @@ func getItemsFromList(ctx context.Context, db *pgxpool.Pool) ([]sqlc.ListShoppin
 }
 
 func addItemToList(ctx context.Context, db *pgxpool.Pool, params sqlc.CreateShoppingItemParams) (sqlc.ShoppingItem, error) {
+	clean, err := allergens.Sanitize(params.Allergens)
+	if err != nil {
+		return sqlc.ShoppingItem{}, httpx.NewClientError(err)
+	}
+	params.Allergens = clean
 	q := sqlc.New(db)
 	return q.CreateShoppingItem(ctx, params)
 }
 
 func updateItemInList(ctx context.Context, db *pgxpool.Pool, params sqlc.UpdateShoppingItemParams) (sqlc.ShoppingItem, error) {
+	// Partial update: a nil slice means "leave allergens unchanged", so only
+	// validate when the caller actually supplied a (possibly empty) list.
+	if params.Allergens != nil {
+		clean, err := allergens.Sanitize(params.Allergens)
+		if err != nil {
+			return sqlc.ShoppingItem{}, httpx.NewClientError(err)
+		}
+		params.Allergens = clean
+	}
 	q := sqlc.New(db)
 	return q.UpdateShoppingItem(ctx, params)
+}
+
+// ── Sub-ingredients ─────────────────────────────────────────────────────────
+
+// SubIngredientInput carries the payload for creating or updating a
+// sub-ingredient. ID is only used on update; ShoppingItemID only on create.
+type SubIngredientInput struct {
+	ID             int32    `json:"id"`
+	ShoppingItemID int32    `json:"shopping_item_id"`
+	Name           string   `json:"name"`
+	Allergens      []string `json:"allergens"`
+	SortOrder      int32    `json:"sort_order"`
+}
+
+func listSubIngredients(ctx context.Context, db *pgxpool.Pool, itemID int32) ([]sqlc.SubIngredient, error) {
+	q := sqlc.New(db)
+	rows, err := q.ListSubIngredientsForItem(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		return []sqlc.SubIngredient{}, nil
+	}
+	return rows, nil
+}
+
+func addSubIngredient(ctx context.Context, db *pgxpool.Pool, input SubIngredientInput) (sqlc.SubIngredient, error) {
+	if input.ShoppingItemID <= 0 {
+		return sqlc.SubIngredient{}, httpx.NewClientError(fmt.Errorf("shopping_item_id is required"))
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		return sqlc.SubIngredient{}, httpx.NewClientError(fmt.Errorf("name is required"))
+	}
+	clean, err := allergens.Sanitize(input.Allergens)
+	if err != nil {
+		return sqlc.SubIngredient{}, httpx.NewClientError(err)
+	}
+	q := sqlc.New(db)
+	return q.AddSubIngredient(ctx, sqlc.AddSubIngredientParams{
+		ShoppingItemID: input.ShoppingItemID,
+		Name:           strings.TrimSpace(input.Name),
+		Allergens:      clean,
+		SortOrder:      input.SortOrder,
+	})
+}
+
+func updateSubIngredient(ctx context.Context, db *pgxpool.Pool, input SubIngredientInput) (sqlc.SubIngredient, error) {
+	if input.ID <= 0 {
+		return sqlc.SubIngredient{}, httpx.NewClientError(fmt.Errorf("id is required"))
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		return sqlc.SubIngredient{}, httpx.NewClientError(fmt.Errorf("name is required"))
+	}
+	clean, err := allergens.Sanitize(input.Allergens)
+	if err != nil {
+		return sqlc.SubIngredient{}, httpx.NewClientError(err)
+	}
+	q := sqlc.New(db)
+	return q.UpdateSubIngredient(ctx, sqlc.UpdateSubIngredientParams{
+		ID:        input.ID,
+		Name:      strings.TrimSpace(input.Name),
+		Allergens: clean,
+		SortOrder: input.SortOrder,
+	})
 }
 
 func seedShoppingList(ctx context.Context, db *pgxpool.Pool) error {

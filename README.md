@@ -8,9 +8,10 @@ A Go-based REST API backend for a household shopping and meal planning applicati
 - **Households** — create a household, invite others via a shareable code, and manage membership approvals
 - **Shopping list** — add, remove, and categorise items; mark items as "have it" without removing them from the list
 - **Meals & meal planning** — define meals as rich "meal cards" (photo, recipe, allergen tags, and ingredients with optional flags and swap-in option groups), set portion sizes, and link meals to a weekly plan so their ingredients populate the shopping list automatically
+- **Allergen tracking** — a meal's allergen list is the derived union of its own manual tags plus every tag on its ingredients and their sub-ingredients, so a meal automatically inherits allergens from what it's made of
 - **Cook review** — on login the user is shown meals planned since their previous visit (capped to under 7 days) and asked which they actually cooked; confirmed meals decrement the pantry automatically
 - **Pantry** — track perishable stock with expiry awareness; a background scheduler marks items as `expiring_soon` or `expired` every hour
-- **Item catalogue** — a typed catalogue of shopping items covering 18 categories (fruit, dairy, meat, bakery, household goods, etc.)
+- **Item catalogue** — a typed catalogue of shopping items covering 18 categories (fruit, dairy, meat, bakery, household goods, etc.); each item can carry its own allergen tags and a lightweight breakdown into **sub-ingredients** (e.g. a stock cube → salt, yeast extract, celery), each of which can itself be flagged for allergens
 
 ## Tech Stack
 
@@ -60,6 +61,7 @@ Routes are grouped by feature area and protected by session authentication unles
 | Users | `/users` | Authenticated |
 | Households | `/households` | Authenticated |
 | Shopping list | `/shopping-list` | Authenticated |
+| Shopping items | `/shopping/items` | Authenticated; item CRUD plus sub-ingredient CRUD under `/shopping/items/sub-ingredients` (`GET ?item_id=`, `POST /add`, `POST /update`, `DELETE /remove?id=`). Allergen tags are validated against the shared EU-14 set. |
 | Meals | `/meals` | Authenticated; includes `GET /meals/cook-review` and `POST /meals/cook-review/confirm` |
 | Pantry | `/pantry` | Authenticated |
 
@@ -96,8 +98,10 @@ database/
   queries/        # Raw SQL queries
   sqlc/           # Generated query code (sqlc)
   schemas/        # Full schema reference
-internal/api/
-  httpx/          # Generic router and endpoint helpers
-  middleware/     # CORS and middleware chain
+internal/
+  allergens/      # Shared EU-14 allergen set + validation/union helpers
+  api/
+    httpx/        # Generic router and endpoint helpers
+    middleware/   # CORS and middleware chain
 testing/          # Shared fakes and service-level integration tests
 ```

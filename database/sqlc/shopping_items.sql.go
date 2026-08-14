@@ -7,22 +7,33 @@ package database
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createShoppingItem = `-- name: CreateShoppingItem :one
-INSERT INTO shopping_items (name, item_type, portions_per_unit)
-VALUES ($1, $2, $3)
-RETURNING id, name, item_type, text_id, portions_per_unit, shelf_life_days
+INSERT INTO shopping_items (name, item_type, portions_per_unit, allergens)
+VALUES (
+    $1, $2, $3,
+    COALESCE($4::text[], '{}')
+)
+RETURNING id, name, item_type, text_id, portions_per_unit, shelf_life_days, allergens
 `
 
 type CreateShoppingItemParams struct {
 	Name            string           `json:"name"`
 	ItemType        ShoppingItemType `json:"item_type"`
 	PortionsPerUnit int32            `json:"portions_per_unit"`
+	Allergens       []string         `json:"allergens"`
 }
 
 func (q *Queries) CreateShoppingItem(ctx context.Context, arg CreateShoppingItemParams) (ShoppingItem, error) {
-	row := q.db.QueryRow(ctx, createShoppingItem, arg.Name, arg.ItemType, arg.PortionsPerUnit)
+	row := q.db.QueryRow(ctx, createShoppingItem,
+		arg.Name,
+		arg.ItemType,
+		arg.PortionsPerUnit,
+		arg.Allergens,
+	)
 	var i ShoppingItem
 	err := row.Scan(
 		&i.ID,
@@ -31,12 +42,13 @@ func (q *Queries) CreateShoppingItem(ctx context.Context, arg CreateShoppingItem
 		&i.TextID,
 		&i.PortionsPerUnit,
 		&i.ShelfLifeDays,
+		&i.Allergens,
 	)
 	return i, err
 }
 
 const getAllShoppingItems = `-- name: GetAllShoppingItems :many
-SELECT id, name, item_type, portions_per_unit
+SELECT id, name, item_type, portions_per_unit, allergens
 FROM shopping_items
 `
 
@@ -45,6 +57,7 @@ type GetAllShoppingItemsRow struct {
 	Name            string           `json:"name"`
 	ItemType        ShoppingItemType `json:"item_type"`
 	PortionsPerUnit int32            `json:"portions_per_unit"`
+	Allergens       []string         `json:"allergens"`
 }
 
 func (q *Queries) GetAllShoppingItems(ctx context.Context) ([]GetAllShoppingItemsRow, error) {
@@ -61,6 +74,7 @@ func (q *Queries) GetAllShoppingItems(ctx context.Context) ([]GetAllShoppingItem
 			&i.Name,
 			&i.ItemType,
 			&i.PortionsPerUnit,
+			&i.Allergens,
 		); err != nil {
 			return nil, err
 		}
@@ -73,7 +87,7 @@ func (q *Queries) GetAllShoppingItems(ctx context.Context) ([]GetAllShoppingItem
 }
 
 const listShoppingItems = `-- name: ListShoppingItems :many
-SELECT id, name, item_type, portions_per_unit
+SELECT id, name, item_type, portions_per_unit, allergens
 FROM shopping_items
 `
 
@@ -82,6 +96,7 @@ type ListShoppingItemsRow struct {
 	Name            string           `json:"name"`
 	ItemType        ShoppingItemType `json:"item_type"`
 	PortionsPerUnit int32            `json:"portions_per_unit"`
+	Allergens       []string         `json:"allergens"`
 }
 
 func (q *Queries) ListShoppingItems(ctx context.Context) ([]ListShoppingItemsRow, error) {
@@ -98,6 +113,7 @@ func (q *Queries) ListShoppingItems(ctx context.Context) ([]ListShoppingItemsRow
 			&i.Name,
 			&i.ItemType,
 			&i.PortionsPerUnit,
+			&i.Allergens,
 		); err != nil {
 			return nil, err
 		}
@@ -112,26 +128,31 @@ func (q *Queries) ListShoppingItems(ctx context.Context) ([]ListShoppingItemsRow
 const updateShoppingItem = `-- name: UpdateShoppingItem :one
 UPDATE shopping_items
 SET
-    name             = COALESCE($2, name),
-    item_type        = COALESCE($3, item_type),
-    portions_per_unit = COALESCE($4, portions_per_unit)
-WHERE id = $1
-RETURNING id, name, item_type, text_id, portions_per_unit, shelf_life_days
+    name              = COALESCE($1, name),
+    item_type         = COALESCE($2, item_type),
+    portions_per_unit = COALESCE($3, portions_per_unit),
+    allergens         = COALESCE($4::text[], allergens)
+WHERE id = $5
+RETURNING id, name, item_type, text_id, portions_per_unit, shelf_life_days, allergens
 `
 
 type UpdateShoppingItemParams struct {
-	ID              int32            `json:"id"`
-	Name            string           `json:"name"`
-	ItemType        ShoppingItemType `json:"item_type"`
-	PortionsPerUnit int32            `json:"portions_per_unit"`
+	Name            pgtype.Text          `json:"name"`
+	ItemType        NullShoppingItemType `json:"item_type"`
+	PortionsPerUnit pgtype.Int4          `json:"portions_per_unit"`
+	Allergens       []string             `json:"allergens"`
+	ID              int32                `json:"id"`
 }
 
+// Partial update: pass NULL for any field to leave it unchanged. Allergens
+// follow the same rule — NULL keeps the existing tags, '{}' clears them.
 func (q *Queries) UpdateShoppingItem(ctx context.Context, arg UpdateShoppingItemParams) (ShoppingItem, error) {
 	row := q.db.QueryRow(ctx, updateShoppingItem,
-		arg.ID,
 		arg.Name,
 		arg.ItemType,
 		arg.PortionsPerUnit,
+		arg.Allergens,
+		arg.ID,
 	)
 	var i ShoppingItem
 	err := row.Scan(
@@ -141,6 +162,7 @@ func (q *Queries) UpdateShoppingItem(ctx context.Context, arg UpdateShoppingItem
 		&i.TextID,
 		&i.PortionsPerUnit,
 		&i.ShelfLifeDays,
+		&i.Allergens,
 	)
 	return i, err
 }
@@ -149,7 +171,7 @@ const updateShoppingItemPortions = `-- name: UpdateShoppingItemPortions :one
 UPDATE shopping_items
 SET portions_per_unit = $2
 WHERE id = $1
-RETURNING id, name, item_type, text_id, portions_per_unit, shelf_life_days
+RETURNING id, name, item_type, text_id, portions_per_unit, shelf_life_days, allergens
 `
 
 type UpdateShoppingItemPortionsParams struct {
@@ -167,6 +189,7 @@ func (q *Queries) UpdateShoppingItemPortions(ctx context.Context, arg UpdateShop
 		&i.TextID,
 		&i.PortionsPerUnit,
 		&i.ShelfLifeDays,
+		&i.Allergens,
 	)
 	return i, err
 }
