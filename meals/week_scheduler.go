@@ -3,16 +3,18 @@ package meals
 // week_scheduler.go
 //
 // Runs a weekly job that ensures two full weeks of meal plan are always
-// available: the current week and the week after.
+// available: the current week and the week after. The same weekly tick also
+// prunes old past weeks so meal_plan does not grow without bound.
 //
 // On every server startup the scheduler checks:
 //   - Does the current week have rows for every scope that has repeating meals?
 //     If not, generate them (handles a missed rollover or a fresh server start).
 //   - Does the next week have rows? If not, generate them too.
+//   - Are there meal_plan rows older than the retention window? If so, delete them.
 //
 // After the startup check, it sleeps until the next Monday midnight (local
-// server time) and repeats, so new next-week rows are always created at the
-// start of each new week.
+// server time) and repeats, so new next-week rows are always created — and old
+// weeks cleaned up — at the start of each new week.
 //
 // Call meals.StartWeekScheduler(pool) from main alongside the other jobs.
 
@@ -25,6 +27,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// retentionWeeks is how many past weeks of meal_plan history to keep. Rows for
+// weeks older than (current week − retentionWeeks) are deleted on each run.
+const retentionWeeks = 4
 
 // StartWeekScheduler starts the background goroutine that keeps two weeks of
 // meal plan rows populated for every scope with repeating assignments.
@@ -113,5 +119,18 @@ func runGeneration(db *pgxpool.Pool) {
 			"this_week_rows", thisGenerated,
 			"next_week_rows", nextGenerated,
 		)
+	}
+
+	// Prune weeks older than the retention window so meal_plan stays bounded.
+	cutoff := thisWeek.AddDate(0, 0, -7*retentionWeeks)
+	pruned, err := database.PruneMealPlanBefore(ctx, db, cutoff)
+	if err != nil {
+		logger.Error("week scheduler: pruning old weeks failed",
+			"cutoff", cutoff.Format("2006-01-02"), "err", logger.WithStack(err))
+		return
+	}
+	if pruned > 0 {
+		logger.Info("week scheduler: pruned old meal_plan weeks",
+			"cutoff", cutoff.Format("2006-01-02"), "rows_deleted", pruned)
 	}
 }

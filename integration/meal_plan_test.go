@@ -692,6 +692,62 @@ func TestIntegration_DistinctScopes_IncludesScopeWithRepeating(t *testing.T) {
 	}
 }
 
+// ── PruneMealPlanBefore ───────────────────────────────────────────────────────
+
+func TestIntegration_PruneMealPlanBefore_DeletesOldWeeksKeepsRecent(t *testing.T) {
+	ctx := context.Background()
+	uid, _, _ := makeUser(t)
+	mealID := makeMeal(t, "PruneMeal")
+	_, userID := personalScope(uid)
+
+	thisWeek := weekOf(time.Now())
+	oldWeek := thisWeek.AddDate(0, 0, -7*20) // 20 weeks ago — well past retention
+
+	// One row in an old week and one in the current week for this scope.
+	for _, wk := range []time.Time{oldWeek, thisWeek} {
+		if err := database.SetWeekPlanDay(ctx, sharedPool(), database.SetWeekPlanDayParams{
+			DayName:   "Monday",
+			WeekStart: wk,
+			MealID:    pgtype.Int4{Int32: mealID, Valid: true},
+			UserID:    userID,
+		}); err != nil {
+			t.Fatalf("SetWeekPlanDay week=%s: %v", wk.Format("2006-01-02"), err)
+		}
+	}
+
+	// Retention window: keep current week + previous 4 weeks.
+	cutoff := thisWeek.AddDate(0, 0, -7*4)
+	deleted, err := database.PruneMealPlanBefore(ctx, sharedPool(), cutoff)
+	if err != nil {
+		t.Fatalf("PruneMealPlanBefore: %v", err)
+	}
+	if deleted < 1 {
+		t.Errorf("expected at least the old-week row to be deleted, got %d", deleted)
+	}
+
+	oldRows, err := database.GetWeekPlan(ctx, sharedPool(), database.GetWeekPlanParams{
+		WeekStart: oldWeek,
+		UserID:    userID,
+	})
+	if err != nil {
+		t.Fatalf("GetWeekPlan old week: %v", err)
+	}
+	if len(oldRows) != 0 {
+		t.Errorf("expected old-week rows to be pruned, got %d", len(oldRows))
+	}
+
+	recentRows, err := database.GetWeekPlan(ctx, sharedPool(), database.GetWeekPlanParams{
+		WeekStart: thisWeek,
+		UserID:    userID,
+	})
+	if err != nil {
+		t.Fatalf("GetWeekPlan this week: %v", err)
+	}
+	if len(recentRows) != 1 {
+		t.Errorf("expected the current week's row to survive pruning, got %d", len(recentRows))
+	}
+}
+
 // WeekStart is exported from the database package and also tested here to
 // confirm the Monday-anchoring logic is correct.
 func TestIntegration_WeekStart_AlwaysReturnsMonday(t *testing.T) {
