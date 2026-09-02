@@ -142,6 +142,7 @@ type Meal struct {
 	PhotoUrl        pgtype.Text `json:"photo_url"`
 	Recipe          pgtype.Text `json:"recipe"`
 	Allergens       []string    `json:"allergens"`
+	Category        string      `json:"category"`
 	HouseholdID     pgtype.Int4 `json:"household_id"`
 }
 
@@ -187,6 +188,14 @@ type MealOptionGroupEntry struct {
 	SortOrder      int32       `json:"sort_order"`
 	ShoppingItemID pgtype.Int4 `json:"shopping_item_id"`
 	SubMealID      pgtype.Int4 `json:"sub_meal_id"`
+}
+
+type MealPhoto struct {
+	ID          string           `json:"id"`
+	ContentType string           `json:"content_type"`
+	Bytes       []byte           `json:"bytes"`
+	ByteSize    int32            `json:"byte_size"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
 }
 
 type MealPlan struct {

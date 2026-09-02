@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -127,4 +128,48 @@ func RegisterEndpoint[T any](r *Router, cfg EndpointConfig[T]) {
 	}
 
 	r.mux.Handle(fullPath, h)
+}
+
+// RegisterAppHandler wires a raw AppHandler at prefix+path, applying the method
+// guard and (unless public) the router's auth middleware, but WITHOUT decoding
+// the request body as JSON. The handler's non-error return value is still
+// JSON-encoded by Wrap. Use this for endpoints that must read the raw request
+// body themselves — e.g. multipart file uploads — while replying with JSON.
+func (r *Router) RegisterAppHandler(method, path string, public bool, h AppHandler) {
+	fullPath := r.prefix + path
+
+	guarded := AppHandler(func(w http.ResponseWriter, req *http.Request) (any, error) {
+		if req.Method != method {
+			return nil, NewClientError(errors.New("method not allowed"))
+		}
+		return h(w, req)
+	})
+
+	var handler http.Handler = r.wrap(guarded)
+	if !public && r.authMiddleware != nil {
+		handler = r.authMiddleware(handler)
+	}
+	r.mux.Handle(fullPath, handler)
+}
+
+// RegisterRawHandler wires a plain http.Handler at prefix+path with a method
+// guard and (unless public) the router's auth middleware, bypassing JSON
+// wrapping entirely. Use this for endpoints that write their own response body
+// — e.g. serving an image with its own Content-Type and cache headers.
+func (r *Router) RegisterRawHandler(method, path string, public bool, h http.HandlerFunc) {
+	fullPath := r.prefix + path
+
+	guarded := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != method {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		h(w, req)
+	})
+
+	var handler http.Handler = guarded
+	if !public && r.authMiddleware != nil {
+		handler = r.authMiddleware(handler)
+	}
+	r.mux.Handle(fullPath, handler)
 }

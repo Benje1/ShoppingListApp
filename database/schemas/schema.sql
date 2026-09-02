@@ -121,11 +121,15 @@ CREATE TABLE meals (
     recipe           TEXT,
     -- Structured allergen tags, validated in application code against a fixed set.
     allergens        TEXT[] NOT NULL DEFAULT '{}',
+    -- Planning "slot type" (soup, salad, ...): meals in the same category are
+    -- interchangeable for a day. Validated in application code; '' = uncategorised.
+    category         TEXT NOT NULL DEFAULT '',
     -- NULL = global/shared meal; non-NULL = only visible within this household
     household_id     INT REFERENCES households(household_id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_meals_household ON meals (household_id) WHERE household_id IS NOT NULL;
+CREATE INDEX idx_meals_category  ON meals (category) WHERE category <> '';
 
 CREATE TABLE meal_ingredients (
     meal_id          INT REFERENCES meals(id) ON DELETE CASCADE,
@@ -273,3 +277,14 @@ CREATE UNIQUE INDEX idx_meal_cook_log_household
 
 CREATE UNIQUE INDEX idx_meal_cook_log_user
     ON meal_cook_log (cook_date, meal_id, user_id) WHERE user_id IS NOT NULL;
+
+-- meal_photos stores uploaded meal images content-addressed by SHA-256, so they
+-- persist across redeploys on hosts with an ephemeral filesystem. The API serves
+-- them back as a hosted URL stored in meals.photo_url.
+CREATE TABLE meal_photos (
+    id           TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL,
+    bytes        BYTEA NOT NULL,
+    byte_size    INT   NOT NULL,
+    created_at   TIMESTAMP NOT NULL DEFAULT now()
+);

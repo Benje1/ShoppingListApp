@@ -1,8 +1,9 @@
 -- name: CreateMeal :one
-INSERT INTO meals (name, description, default_portions, season, photo_url, recipe, allergens, household_id)
+INSERT INTO meals (name, description, default_portions, season, photo_url, recipe, allergens, category, household_id)
 VALUES (
     sqlc.arg(name), sqlc.arg(description), sqlc.arg(default_portions), sqlc.arg(season),
-    sqlc.arg(photo_url), sqlc.arg(recipe), COALESCE(sqlc.arg(allergens)::text[], '{}'), sqlc.arg(household_id)
+    sqlc.arg(photo_url), sqlc.arg(recipe), COALESCE(sqlc.arg(allergens)::text[], '{}'),
+    sqlc.arg(category), sqlc.arg(household_id)
 )
 RETURNING *;
 
@@ -27,6 +28,7 @@ SET name             = sqlc.arg(name),
     photo_url        = sqlc.arg(photo_url),
     recipe           = sqlc.arg(recipe),
     allergens        = COALESCE(sqlc.arg(allergens)::text[], '{}'),
+    category         = sqlc.arg(category),
     household_id     = sqlc.arg(household_id)
 WHERE id = sqlc.arg(id)
 RETURNING *;
@@ -115,6 +117,71 @@ WHERE m.household_id IS NULL
 GROUP BY m.id
 ORDER BY m.name;
 
+-- name: ListMealsByCategory :many
+-- All meals in the given category that are visible to the caller (global meals
+-- plus the caller's household), so the planner can offer "any <category>" and
+-- let the user swap between them. Same summary shape as the meals list.
+SELECT
+    m.*,
+    COUNT(mi.shopping_item_id) AS ingredient_count,
+    (
+        SELECT COALESCE(array_agg(DISTINCT a), '{}')
+        FROM (
+            SELECT unnest(m.allergens) AS a
+            UNION
+            SELECT unnest(si.allergens)
+            FROM meal_ingredients mi2
+            JOIN shopping_items si ON si.id = mi2.shopping_item_id
+            WHERE mi2.meal_id = m.id
+            UNION
+            SELECT unnest(sub.allergens)
+            FROM meal_ingredients mi3
+            JOIN sub_ingredients sub ON sub.shopping_item_id = mi3.shopping_item_id
+            WHERE mi3.meal_id = m.id
+        ) all_allergens
+    )::text[] AS derived_allergens
+FROM meals m
+LEFT JOIN meal_ingredients mi ON mi.meal_id = m.id
+WHERE m.category = sqlc.arg('category')
+  AND (m.household_id IS NULL OR m.household_id = sqlc.narg('household_id'))
+GROUP BY m.id
+ORDER BY m.name;
+
+-- name: SuggestMealByCategory :one
+-- One suggested meal for a category slot: the least-recently-cooked meal in the
+-- category (never-cooked meals come first), respecting household visibility.
+-- Cook history lives in meal_cook_log, so this ordering is done server-side.
+SELECT
+    m.*,
+    COUNT(mi.shopping_item_id) AS ingredient_count,
+    (
+        SELECT COALESCE(array_agg(DISTINCT a), '{}')
+        FROM (
+            SELECT unnest(m.allergens) AS a
+            UNION
+            SELECT unnest(si.allergens)
+            FROM meal_ingredients mi2
+            JOIN shopping_items si ON si.id = mi2.shopping_item_id
+            WHERE mi2.meal_id = m.id
+            UNION
+            SELECT unnest(sub.allergens)
+            FROM meal_ingredients mi3
+            JOIN sub_ingredients sub ON sub.shopping_item_id = mi3.shopping_item_id
+            WHERE mi3.meal_id = m.id
+        ) all_allergens
+    )::text[] AS derived_allergens
+FROM meals m
+LEFT JOIN meal_ingredients mi ON mi.meal_id = m.id
+WHERE m.category = sqlc.arg('category')
+  AND (m.household_id IS NULL OR m.household_id = sqlc.narg('household_id'))
+GROUP BY m.id
+ORDER BY (
+    SELECT MAX(cl.cook_date)
+    FROM meal_cook_log cl
+    WHERE cl.meal_id = m.id AND cl.made
+) ASC NULLS FIRST, m.name
+LIMIT 1;
+
 -- name: AddMealCook :exec
 -- Assign a cook to a meal, optionally scoped to a specific household.
 -- Pass NULL for household_id to create a cross-household assignment.
@@ -191,7 +258,7 @@ WHERE day_name = $1
 --   3. Meal has no cook assignments at all (universally available).
 -- Additionally, household-specific meals are filtered: if a meal has a
 -- household_id set, it is only returned when the caller's household matches.
-SELECT m.id, m.name, m.description, m.default_portions, m.season, m.household_id
+SELECT m.id, m.name, m.description, m.default_portions, m.season, m.category, m.household_id
 FROM meals m
 WHERE
     -- Respect household-specific meals: only show them to the right household

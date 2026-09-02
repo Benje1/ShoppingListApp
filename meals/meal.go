@@ -2,15 +2,18 @@ package meals
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
 	sqlc "weekly-shopping-app/database/sqlc"
 	"weekly-shopping-app/internal/allergens"
 	"weekly-shopping-app/internal/api/httpx"
+	"weekly-shopping-app/internal/category"
 	"weekly-shopping-app/internal/dietary"
 	"weekly-shopping-app/internal/logger"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -63,6 +66,8 @@ type MealResponse struct {
 	Season          string `json:"season"`    // empty string means no season set
 	PhotoURL        string `json:"photo_url"` // empty string means no photo
 	Recipe          string `json:"recipe"`    // empty string means no recipe
+	// Category is the planning "slot type" (soup, salad, ...); "" = uncategorised.
+	Category string `json:"category"`
 	// Allergens is the derived union: the meal's manual tags plus every tag on
 	// its ingredients and their sub-ingredients. ManualAllergens holds only the
 	// tags entered directly on the meal (so the UI can edit them independently).
@@ -84,6 +89,7 @@ type MealSummary struct {
 	DefaultPortions int32    `json:"default_portions"`
 	Season          string   `json:"season"`    // empty string means no season set
 	PhotoURL        string   `json:"photo_url"` // empty string means no photo
+	Category        string   `json:"category"`  // planning slot type; "" = uncategorised
 	Allergens       []string `json:"allergens"`
 	IngredientCount int64    `json:"ingredient_count"`
 	// HouseholdID is nil for global/shared meals.
@@ -100,6 +106,7 @@ type CreateMealInput struct {
 	PhotoURL        string            `json:"photo_url"` // image URL, "" for none
 	Recipe          string            `json:"recipe"`    // free-text recipe/instructions
 	Allergens       []string          `json:"allergens"` // subset of the fixed allergen set
+	Category        string            `json:"category"`  // one of the fixed category set, or "" for none
 	Ingredients     []IngredientInput `json:"ingredients"`
 	// HouseholdID makes this meal household-specific. Omit (or set 0) for a global meal.
 	HouseholdID int32 `json:"household_id"`
@@ -125,6 +132,7 @@ type UpdateMealInput struct {
 	PhotoURL        string   `json:"photo_url"` // image URL, "" for none
 	Recipe          string   `json:"recipe"`    // free-text recipe/instructions
 	Allergens       []string `json:"allergens"` // subset of the fixed allergen set
+	Category        string   `json:"category"`  // one of the fixed category set, or "" for none
 	// HouseholdID makes this meal household-specific. Set 0 to make it global again.
 	HouseholdID int32 `json:"household_id"`
 }
@@ -301,6 +309,16 @@ func sanitizeDietary(in []string) ([]string, error) {
 	return out, nil
 }
 
+// sanitizeCategory validates the meal category against the shared allowed set,
+// surfacing an unknown value as a client error (HTTP 400). "" is valid.
+func sanitizeCategory(in string) (string, error) {
+	out, err := category.Sanitize(in)
+	if err != nil {
+		return "", httpx.NewClientError(err)
+	}
+	return out, nil
+}
+
 // packsToBuy converts a per-portion amount into whole packs for the given number
 // of portions: ceil(perPortion × portions ÷ packSize). Returns 0 when the
 // ingredient has no per-portion amount (legacy whole-batch quantity).
@@ -364,6 +382,7 @@ func buildMealResponse(meal sqlc.Meal, rows []sqlc.GetMealWithIngredientsRow) Me
 		DefaultPortions: meal.DefaultPortions,
 		PhotoURL:        textOrEmpty(meal.PhotoUrl),
 		Recipe:          textOrEmpty(meal.Recipe),
+		Category:        meal.Category,
 		Allergens:       derived,
 		ManualAllergens: manual,
 		Ingredients:     ingredients,
@@ -431,6 +450,7 @@ func listMeals(ctx context.Context, db *pgxpool.Pool, householdID pgtype.Int4) (
 			Description:     desc,
 			DefaultPortions: r.DefaultPortions,
 			PhotoURL:        textOrEmpty(r.PhotoUrl),
+			Category:        r.Category,
 			Allergens:       allergensOrEmpty(r.DerivedAllergens),
 			IngredientCount: r.IngredientCount,
 		}
@@ -522,6 +542,10 @@ func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*
 	if err != nil {
 		return nil, err
 	}
+	cat, err := sanitizeCategory(input.Category)
+	if err != nil {
+		return nil, err
+	}
 	q := sqlc.New(db)
 	meal, err := q.CreateMeal(ctx, sqlc.CreateMealParams{
 		Name:            input.Name,
@@ -531,6 +555,7 @@ func createMeal(ctx context.Context, db *pgxpool.Pool, input CreateMealInput) (*
 		PhotoUrl:        toText(input.PhotoURL),
 		Recipe:          toText(input.Recipe),
 		Allergens:       allergens,
+		Category:        cat,
 		HouseholdID:     nullableInt4(input.HouseholdID),
 	})
 	if err != nil {
@@ -565,6 +590,10 @@ func updateMeal(ctx context.Context, db *pgxpool.Pool, id int32, input UpdateMea
 	if err != nil {
 		return nil, err
 	}
+	cat, err := sanitizeCategory(input.Category)
+	if err != nil {
+		return nil, err
+	}
 	q := sqlc.New(db)
 	if _, err := q.UpdateMeal(ctx, sqlc.UpdateMealParams{
 		ID:              id,
@@ -575,6 +604,7 @@ func updateMeal(ctx context.Context, db *pgxpool.Pool, id int32, input UpdateMea
 		PhotoUrl:        toText(input.PhotoURL),
 		Recipe:          toText(input.Recipe),
 		Allergens:       allergens,
+		Category:        cat,
 		HouseholdID:     nullableInt4(input.HouseholdID),
 	}); err != nil {
 		return nil, logger.WithStack(err)
@@ -767,9 +797,101 @@ func getMealsForCook(ctx context.Context, db *pgxpool.Pool, userID int32, househ
 		if r.Description.Valid {
 			desc = r.Description.String
 		}
-		out[i] = MealSummary{ID: r.ID, Name: r.Name, Description: desc, DefaultPortions: r.DefaultPortions}
+		s := MealSummary{ID: r.ID, Name: r.Name, Description: desc, DefaultPortions: r.DefaultPortions, Category: r.Category}
+		if r.Season.Valid {
+			s.Season = string(r.Season.Season)
+		}
+		if r.HouseholdID.Valid {
+			hid := r.HouseholdID.Int32
+			s.HouseholdID = &hid
+		}
+		out[i] = s
 	}
 	return out, nil
+}
+
+// listMealsByCategory returns every meal in a category that is visible to the
+// caller (global meals plus the caller's household), as summaries for the planner.
+func listMealsByCategory(ctx context.Context, db *pgxpool.Pool, cat string, householdID pgtype.Int4) ([]MealSummary, error) {
+	clean, err := sanitizeCategory(cat)
+	if err != nil {
+		return nil, err
+	}
+	if clean == "" {
+		return nil, httpx.NewClientError(fmt.Errorf("a category query parameter is required"))
+	}
+	q := sqlc.New(db)
+	rows, err := q.ListMealsByCategory(ctx, sqlc.ListMealsByCategoryParams{
+		Category:    clean,
+		HouseholdID: householdID,
+	})
+	if err != nil {
+		return nil, logger.WithStack(err)
+	}
+	out := make([]MealSummary, len(rows))
+	for i, r := range rows {
+		s := MealSummary{
+			ID:              r.ID,
+			Name:            r.Name,
+			Description:     textOrEmpty(r.Description),
+			DefaultPortions: r.DefaultPortions,
+			PhotoURL:        textOrEmpty(r.PhotoUrl),
+			Category:        r.Category,
+			Allergens:       allergensOrEmpty(r.DerivedAllergens),
+			IngredientCount: r.IngredientCount,
+		}
+		if r.Season.Valid {
+			s.Season = string(r.Season.Season)
+		}
+		if r.HouseholdID.Valid {
+			hid := r.HouseholdID.Int32
+			s.HouseholdID = &hid
+		}
+		out[i] = s
+	}
+	return out, nil
+}
+
+// suggestMealByCategory returns one suggested meal for a category slot: the
+// least-recently-cooked meal in the category (never-cooked first). Returns nil
+// when the category has no visible meals.
+func suggestMealByCategory(ctx context.Context, db *pgxpool.Pool, cat string, householdID pgtype.Int4) (*MealSummary, error) {
+	clean, err := sanitizeCategory(cat)
+	if err != nil {
+		return nil, err
+	}
+	if clean == "" {
+		return nil, httpx.NewClientError(fmt.Errorf("a category query parameter is required"))
+	}
+	q := sqlc.New(db)
+	r, err := q.SuggestMealByCategory(ctx, sqlc.SuggestMealByCategoryParams{
+		Category:    clean,
+		HouseholdID: householdID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, logger.WithStack(err)
+	}
+	s := MealSummary{
+		ID:              r.ID,
+		Name:            r.Name,
+		Description:     textOrEmpty(r.Description),
+		DefaultPortions: r.DefaultPortions,
+		PhotoURL:        textOrEmpty(r.PhotoUrl),
+		Category:        r.Category,
+		Allergens:       allergensOrEmpty(r.DerivedAllergens),
+		IngredientCount: r.IngredientCount,
+	}
+	if r.Season.Valid {
+		s.Season = string(r.Season.Season)
+	}
+	if r.HouseholdID.Valid {
+		hid := r.HouseholdID.Int32
+		s.HouseholdID = &hid
+	}
+	return &s, nil
 }
 
 // ── Meal plan ─────────────────────────────────────────────────────────────────
