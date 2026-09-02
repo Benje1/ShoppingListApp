@@ -142,6 +142,7 @@ type Meal struct {
 	PhotoUrl        pgtype.Text `json:"photo_url"`
 	Recipe          pgtype.Text `json:"recipe"`
 	Allergens       []string    `json:"allergens"`
+	Category        string      `json:"category"`
 	HouseholdID     pgtype.Int4 `json:"household_id"`
 }
 
@@ -170,11 +171,13 @@ type MealCookLog struct {
 }
 
 type MealIngredient struct {
-	MealID         int32          `json:"meal_id"`
-	ShoppingItemID int32          `json:"shopping_item_id"`
-	Quantity       pgtype.Numeric `json:"quantity"`
-	Unit           pgtype.Text    `json:"unit"`
-	Optional       bool           `json:"optional"`
+	MealID             int32          `json:"meal_id"`
+	ShoppingItemID     int32          `json:"shopping_item_id"`
+	Quantity           pgtype.Numeric `json:"quantity"`
+	Unit               pgtype.Text    `json:"unit"`
+	Optional           bool           `json:"optional"`
+	QuantityPerPortion pgtype.Numeric `json:"quantity_per_portion"`
+	DietaryTags        []string       `json:"dietary_tags"`
 }
 
 type MealOptionGroupEntry struct {
@@ -185,6 +188,14 @@ type MealOptionGroupEntry struct {
 	SortOrder      int32       `json:"sort_order"`
 	ShoppingItemID pgtype.Int4 `json:"shopping_item_id"`
 	SubMealID      pgtype.Int4 `json:"sub_meal_id"`
+}
+
+type MealPhoto struct {
+	ID          string           `json:"id"`
+	ContentType string           `json:"content_type"`
+	Bytes       []byte           `json:"bytes"`
+	ByteSize    int32            `json:"byte_size"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
 }
 
 type MealPlan struct {
@@ -228,6 +239,9 @@ type ShoppingItem struct {
 	PortionsPerUnit int32            `json:"portions_per_unit"`
 	ShelfLifeDays   pgtype.Int4      `json:"shelf_life_days"`
 	Allergens       []string         `json:"allergens"`
+	BaseUnit        pgtype.Text      `json:"base_unit"`
+	PackSize        pgtype.Numeric   `json:"pack_size"`
+	SoldLoose       bool             `json:"sold_loose"`
 }
 
 type ShoppingList struct {

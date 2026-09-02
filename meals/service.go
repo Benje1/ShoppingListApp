@@ -129,6 +129,52 @@ func RegisterMealRoutes(mux *http.ServeMux, db *pgxpool.Pool, wrap func(httpx.Ap
 		},
 	})
 
+	// GET /meals/by-category?category=soup — meals in a category (interchangeable
+	// slot options for the planner)
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path: "/by-category", Method: "GET", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(r *http.Request, _ struct{}) (any, error) {
+				sess, err := authentication.SessionFromContext(r)
+				if err != nil {
+					return nil, err
+				}
+				householdID := pgtype.Int4{
+					Int32: sess.FirstHouseholdID(),
+					Valid: sess.FirstHouseholdID() != 0,
+				}
+				return listMealsByCategory(r.Context(), db, r.URL.Query().Get("category"), householdID)
+			}
+		},
+	})
+
+	// GET /meals/suggest?category=soup — one suggested (least-recently-cooked)
+	// meal for a category slot; null when the category has no visible meals
+	httpx.RegisterEndpoint(r, httpx.EndpointConfig[struct{}]{
+		Path: "/suggest", Method: "GET", Public: false,
+		Handler: func(db *pgxpool.Pool) func(*http.Request, struct{}) (any, error) {
+			return func(r *http.Request, _ struct{}) (any, error) {
+				sess, err := authentication.SessionFromContext(r)
+				if err != nil {
+					return nil, err
+				}
+				householdID := pgtype.Int4{
+					Int32: sess.FirstHouseholdID(),
+					Valid: sess.FirstHouseholdID() != 0,
+				}
+				return suggestMealByCategory(r.Context(), db, r.URL.Query().Get("category"), householdID)
+			}
+		},
+	})
+
+	// POST /meals/photo/upload — multipart file upload; returns { "url": ... }.
+	// Raw handler: reads the multipart body itself rather than JSON.
+	r.RegisterAppHandler(http.MethodPost, "/photo/upload", false, handleMealPhotoUpload(db))
+
+	// GET /meals/photo/get?hash=<sha256> — serve a stored photo. Public: the
+	// content-addressed hash is the access capability, so <img> tags can load it.
+	r.RegisterRawHandler(http.MethodGet, "/photo/get", true, handleMealPhotoServe(db))
+
 	registerPlanAndCookRoutes(r, db)
 	RegisterRepeatingPlanRoutes(r, db)
 

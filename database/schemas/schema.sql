@@ -39,7 +39,13 @@ CREATE TABLE shopping_items (
     portions_per_unit INT NOT NULL DEFAULT 1,
     shelf_life_days   INT,
     -- Structured allergen tags, validated in application code against a fixed set.
-    allergens         TEXT[] NOT NULL DEFAULT '{}'
+    allergens         TEXT[] NOT NULL DEFAULT '{}',
+    -- How the item is sold. base_unit is the measurement unit ('g','ml','tin',
+    -- 'unit', ...); pack_size is how many base units are in one pack; sold_loose
+    -- marks items that can also be bought as single base units.
+    base_unit         TEXT,
+    pack_size         NUMERIC(10, 2) NOT NULL DEFAULT 1,
+    sold_loose        BOOLEAN NOT NULL DEFAULT false
 );
 
 -- Lightweight breakdown of a shopping item into its constituent parts
@@ -115,11 +121,15 @@ CREATE TABLE meals (
     recipe           TEXT,
     -- Structured allergen tags, validated in application code against a fixed set.
     allergens        TEXT[] NOT NULL DEFAULT '{}',
+    -- Planning "slot type" (soup, salad, ...): meals in the same category are
+    -- interchangeable for a day. Validated in application code; '' = uncategorised.
+    category         TEXT NOT NULL DEFAULT '',
     -- NULL = global/shared meal; non-NULL = only visible within this household
     household_id     INT REFERENCES households(household_id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_meals_household ON meals (household_id) WHERE household_id IS NOT NULL;
+CREATE INDEX idx_meals_category  ON meals (category) WHERE category <> '';
 
 CREATE TABLE meal_ingredients (
     meal_id          INT REFERENCES meals(id) ON DELETE CASCADE,
@@ -127,6 +137,12 @@ CREATE TABLE meal_ingredients (
     quantity         NUMERIC(10, 2) NOT NULL DEFAULT 1,
     unit             TEXT,
     optional         BOOLEAN NOT NULL DEFAULT false,
+    -- Precise per-portion amount in the item's base_unit (e.g. 100 g pasta per
+    -- person). NULL falls back to `quantity` as a whole-batch amount.
+    quantity_per_portion NUMERIC(10, 2),
+    -- Per-meal-card dietary variant requirements for this ingredient
+    -- (e.g. use the gluten-free pasta). Validated in application code.
+    dietary_tags     TEXT[] NOT NULL DEFAULT '{}',
     PRIMARY KEY (meal_id, shopping_item_id)
 );
 
@@ -261,3 +277,14 @@ CREATE UNIQUE INDEX idx_meal_cook_log_household
 
 CREATE UNIQUE INDEX idx_meal_cook_log_user
     ON meal_cook_log (cook_date, meal_id, user_id) WHERE user_id IS NOT NULL;
+
+-- meal_photos stores uploaded meal images content-addressed by SHA-256, so they
+-- persist across redeploys on hosts with an ephemeral filesystem. The API serves
+-- them back as a hosted URL stored in meals.photo_url.
+CREATE TABLE meal_photos (
+    id           TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL,
+    bytes        BYTEA NOT NULL,
+    byte_size    INT   NOT NULL,
+    created_at   TIMESTAMP NOT NULL DEFAULT now()
+);

@@ -8,6 +8,33 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// ── packsToBuy ──────────────────────────────────────────────────────────────
+
+func TestPacksToBuy(t *testing.T) {
+	ppp := func(f float64) *float64 { return &f }
+	cases := []struct {
+		name       string
+		perPortion *float64
+		portions   int32
+		packSize   float64
+		want       int32
+	}{
+		{"legacy nil per-portion", nil, 4, 500, 0},
+		{"pasta 100g x4 in 500g packs", ppp(100), 4, 500, 1},   // 400g -> 1 pack
+		{"pasta 100g x6 in 500g packs", ppp(100), 6, 500, 2},   // 600g -> 2 packs
+		{"one potato per person, 4-pack", ppp(1), 4, 4, 1},     // exactly one pack
+		{"one potato x5, 4-pack", ppp(1), 5, 4, 2},             // 5 -> 2 packs
+		{"half a tin per person, single tins", ppp(0.5), 3, 1, 2}, // 1.5 -> 2 tins
+		{"zero portions treated as one", ppp(100), 0, 500, 1},
+		{"zero pack size treated as one", ppp(2), 3, 0, 6},
+	}
+	for _, c := range cases {
+		if got := packsToBuy(c.perPortion, c.portions, c.packSize); got != c.want {
+			t.Errorf("%s: packsToBuy = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 // ── toText ────────────────────────────────────────────────────────────────────
 
 func TestToText_NonEmpty(t *testing.T) {

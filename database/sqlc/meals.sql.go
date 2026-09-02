@@ -31,17 +31,23 @@ func (q *Queries) AddMealCook(ctx context.Context, arg AddMealCookParams) error 
 }
 
 const addMealIngredient = `-- name: AddMealIngredient :one
-INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit, optional)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING meal_id, shopping_item_id, quantity, unit, optional
+INSERT INTO meal_ingredients (meal_id, shopping_item_id, quantity, unit, optional, quantity_per_portion, dietary_tags)
+VALUES (
+    $1, $2, $3, $4,
+    $5, $6,
+    COALESCE($7::text[], '{}')
+)
+RETURNING meal_id, shopping_item_id, quantity, unit, optional, quantity_per_portion, dietary_tags
 `
 
 type AddMealIngredientParams struct {
-	MealID         int32          `json:"meal_id"`
-	ShoppingItemID int32          `json:"shopping_item_id"`
-	Quantity       pgtype.Numeric `json:"quantity"`
-	Unit           pgtype.Text    `json:"unit"`
-	Optional       bool           `json:"optional"`
+	MealID             int32          `json:"meal_id"`
+	ShoppingItemID     int32          `json:"shopping_item_id"`
+	Quantity           pgtype.Numeric `json:"quantity"`
+	Unit               pgtype.Text    `json:"unit"`
+	Optional           bool           `json:"optional"`
+	QuantityPerPortion pgtype.Numeric `json:"quantity_per_portion"`
+	DietaryTags        []string       `json:"dietary_tags"`
 }
 
 func (q *Queries) AddMealIngredient(ctx context.Context, arg AddMealIngredientParams) (MealIngredient, error) {
@@ -51,6 +57,8 @@ func (q *Queries) AddMealIngredient(ctx context.Context, arg AddMealIngredientPa
 		arg.Quantity,
 		arg.Unit,
 		arg.Optional,
+		arg.QuantityPerPortion,
+		arg.DietaryTags,
 	)
 	var i MealIngredient
 	err := row.Scan(
@@ -59,6 +67,8 @@ func (q *Queries) AddMealIngredient(ctx context.Context, arg AddMealIngredientPa
 		&i.Quantity,
 		&i.Unit,
 		&i.Optional,
+		&i.QuantityPerPortion,
+		&i.DietaryTags,
 	)
 	return i, err
 }
@@ -81,12 +91,13 @@ func (q *Queries) ClearMealPlanDay(ctx context.Context, arg ClearMealPlanDayPara
 }
 
 const createMeal = `-- name: CreateMeal :one
-INSERT INTO meals (name, description, default_portions, season, photo_url, recipe, allergens, household_id)
+INSERT INTO meals (name, description, default_portions, season, photo_url, recipe, allergens, category, household_id)
 VALUES (
     $1, $2, $3, $4,
-    $5, $6, COALESCE($7::text[], '{}'), $8
+    $5, $6, COALESCE($7::text[], '{}'),
+    $8, $9
 )
-RETURNING id, name, description, default_portions, season, photo_url, recipe, allergens, household_id
+RETURNING id, name, description, default_portions, season, photo_url, recipe, allergens, category, household_id
 `
 
 type CreateMealParams struct {
@@ -97,6 +108,7 @@ type CreateMealParams struct {
 	PhotoUrl        pgtype.Text `json:"photo_url"`
 	Recipe          pgtype.Text `json:"recipe"`
 	Allergens       []string    `json:"allergens"`
+	Category        string      `json:"category"`
 	HouseholdID     pgtype.Int4 `json:"household_id"`
 }
 
@@ -109,6 +121,7 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 		arg.PhotoUrl,
 		arg.Recipe,
 		arg.Allergens,
+		arg.Category,
 		arg.HouseholdID,
 	)
 	var i Meal
@@ -121,6 +134,7 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 		&i.PhotoUrl,
 		&i.Recipe,
 		&i.Allergens,
+		&i.Category,
 		&i.HouseholdID,
 	)
 	return i, err
@@ -137,7 +151,7 @@ func (q *Queries) DeleteMeal(ctx context.Context, id int32) error {
 }
 
 const getMeal = `-- name: GetMeal :one
-SELECT id, name, description, default_portions, season, photo_url, recipe, allergens, household_id FROM meals
+SELECT id, name, description, default_portions, season, photo_url, recipe, allergens, category, household_id FROM meals
 WHERE id = $1
 `
 
@@ -153,6 +167,7 @@ func (q *Queries) GetMeal(ctx context.Context, id int32) (Meal, error) {
 		&i.PhotoUrl,
 		&i.Recipe,
 		&i.Allergens,
+		&i.Category,
 		&i.HouseholdID,
 	)
 	return i, err
@@ -293,10 +308,15 @@ SELECT
     mi.quantity,
     mi.unit,
     mi.optional,
+    mi.quantity_per_portion,
+    mi.dietary_tags,
     si.name           AS ingredient_name,
     si.item_type      AS ingredient_type,
     si.portions_per_unit,
-    si.allergens      AS ingredient_allergens
+    si.allergens      AS ingredient_allergens,
+    si.base_unit,
+    si.pack_size,
+    si.sold_loose
 FROM meals m
 JOIN meal_ingredients mi ON mi.meal_id = m.id
 JOIN shopping_items si   ON si.id = mi.shopping_item_id
@@ -314,10 +334,15 @@ type GetMealWithIngredientsRow struct {
 	Quantity            pgtype.Numeric   `json:"quantity"`
 	Unit                pgtype.Text      `json:"unit"`
 	Optional            bool             `json:"optional"`
+	QuantityPerPortion  pgtype.Numeric   `json:"quantity_per_portion"`
+	DietaryTags         []string         `json:"dietary_tags"`
 	IngredientName      string           `json:"ingredient_name"`
 	IngredientType      ShoppingItemType `json:"ingredient_type"`
 	PortionsPerUnit     int32            `json:"portions_per_unit"`
 	IngredientAllergens []string         `json:"ingredient_allergens"`
+	BaseUnit            pgtype.Text      `json:"base_unit"`
+	PackSize            pgtype.Numeric   `json:"pack_size"`
+	SoldLoose           bool             `json:"sold_loose"`
 }
 
 // Returns one row per ingredient; join in application code to build the full meal.
@@ -340,10 +365,15 @@ func (q *Queries) GetMealWithIngredients(ctx context.Context, id int32) ([]GetMe
 			&i.Quantity,
 			&i.Unit,
 			&i.Optional,
+			&i.QuantityPerPortion,
+			&i.DietaryTags,
 			&i.IngredientName,
 			&i.IngredientType,
 			&i.PortionsPerUnit,
 			&i.IngredientAllergens,
+			&i.BaseUnit,
+			&i.PackSize,
+			&i.SoldLoose,
 		); err != nil {
 			return nil, err
 		}
@@ -356,7 +386,7 @@ func (q *Queries) GetMealWithIngredients(ctx context.Context, id int32) ([]GetMe
 }
 
 const getMealsForCook = `-- name: GetMealsForCook :many
-SELECT m.id, m.name, m.description, m.default_portions, m.season, m.household_id
+SELECT m.id, m.name, m.description, m.default_portions, m.season, m.category, m.household_id
 FROM meals m
 WHERE
     -- Respect household-specific meals: only show them to the right household
@@ -396,6 +426,7 @@ type GetMealsForCookRow struct {
 	Description     pgtype.Text `json:"description"`
 	DefaultPortions int32       `json:"default_portions"`
 	Season          NullSeason  `json:"season"`
+	Category        string      `json:"category"`
 	HouseholdID     pgtype.Int4 `json:"household_id"`
 }
 
@@ -421,6 +452,7 @@ func (q *Queries) GetMealsForCook(ctx context.Context, arg GetMealsForCookParams
 			&i.Description,
 			&i.DefaultPortions,
 			&i.Season,
+			&i.Category,
 			&i.HouseholdID,
 		); err != nil {
 			return nil, err
@@ -434,7 +466,7 @@ func (q *Queries) GetMealsForCook(ctx context.Context, arg GetMealsForCookParams
 }
 
 const listMeals = `-- name: ListMeals :many
-SELECT id, name, description, default_portions, season, photo_url, recipe, allergens, household_id FROM meals
+SELECT id, name, description, default_portions, season, photo_url, recipe, allergens, category, household_id FROM meals
 WHERE household_id IS NULL
    OR household_id = $1
 ORDER BY name
@@ -460,7 +492,92 @@ func (q *Queries) ListMeals(ctx context.Context, householdID pgtype.Int4) ([]Mea
 			&i.PhotoUrl,
 			&i.Recipe,
 			&i.Allergens,
+			&i.Category,
 			&i.HouseholdID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMealsByCategory = `-- name: ListMealsByCategory :many
+SELECT
+    m.id, m.name, m.description, m.default_portions, m.season, m.photo_url, m.recipe, m.allergens, m.category, m.household_id,
+    COUNT(mi.shopping_item_id) AS ingredient_count,
+    (
+        SELECT COALESCE(array_agg(DISTINCT a), '{}')
+        FROM (
+            SELECT unnest(m.allergens) AS a
+            UNION
+            SELECT unnest(si.allergens)
+            FROM meal_ingredients mi2
+            JOIN shopping_items si ON si.id = mi2.shopping_item_id
+            WHERE mi2.meal_id = m.id
+            UNION
+            SELECT unnest(sub.allergens)
+            FROM meal_ingredients mi3
+            JOIN sub_ingredients sub ON sub.shopping_item_id = mi3.shopping_item_id
+            WHERE mi3.meal_id = m.id
+        ) all_allergens
+    )::text[] AS derived_allergens
+FROM meals m
+LEFT JOIN meal_ingredients mi ON mi.meal_id = m.id
+WHERE m.category = $1
+  AND (m.household_id IS NULL OR m.household_id = $2)
+GROUP BY m.id
+ORDER BY m.name
+`
+
+type ListMealsByCategoryParams struct {
+	Category    string      `json:"category"`
+	HouseholdID pgtype.Int4 `json:"household_id"`
+}
+
+type ListMealsByCategoryRow struct {
+	ID               int32       `json:"id"`
+	Name             string      `json:"name"`
+	Description      pgtype.Text `json:"description"`
+	DefaultPortions  int32       `json:"default_portions"`
+	Season           NullSeason  `json:"season"`
+	PhotoUrl         pgtype.Text `json:"photo_url"`
+	Recipe           pgtype.Text `json:"recipe"`
+	Allergens        []string    `json:"allergens"`
+	Category         string      `json:"category"`
+	HouseholdID      pgtype.Int4 `json:"household_id"`
+	IngredientCount  int64       `json:"ingredient_count"`
+	DerivedAllergens []string    `json:"derived_allergens"`
+}
+
+// All meals in the given category that are visible to the caller (global meals
+// plus the caller's household), so the planner can offer "any <category>" and
+// let the user swap between them. Same summary shape as the meals list.
+func (q *Queries) ListMealsByCategory(ctx context.Context, arg ListMealsByCategoryParams) ([]ListMealsByCategoryRow, error) {
+	rows, err := q.db.Query(ctx, listMealsByCategory, arg.Category, arg.HouseholdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMealsByCategoryRow
+	for rows.Next() {
+		var i ListMealsByCategoryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.DefaultPortions,
+			&i.Season,
+			&i.PhotoUrl,
+			&i.Recipe,
+			&i.Allergens,
+			&i.Category,
+			&i.HouseholdID,
+			&i.IngredientCount,
+			&i.DerivedAllergens,
 		); err != nil {
 			return nil, err
 		}
@@ -474,7 +591,7 @@ func (q *Queries) ListMeals(ctx context.Context, householdID pgtype.Int4) ([]Mea
 
 const listMealsWithIngredientCount = `-- name: ListMealsWithIngredientCount :many
 SELECT
-    m.id, m.name, m.description, m.default_portions, m.season, m.photo_url, m.recipe, m.allergens, m.household_id,
+    m.id, m.name, m.description, m.default_portions, m.season, m.photo_url, m.recipe, m.allergens, m.category, m.household_id,
     COUNT(mi.shopping_item_id) AS ingredient_count,
     -- Derived allergen union: the meal's own manual tags plus every tag on its
     -- ingredients and their sub-ingredients, de-duplicated into one array.
@@ -511,6 +628,7 @@ type ListMealsWithIngredientCountRow struct {
 	PhotoUrl         pgtype.Text `json:"photo_url"`
 	Recipe           pgtype.Text `json:"recipe"`
 	Allergens        []string    `json:"allergens"`
+	Category         string      `json:"category"`
 	HouseholdID      pgtype.Int4 `json:"household_id"`
 	IngredientCount  int64       `json:"ingredient_count"`
 	DerivedAllergens []string    `json:"derived_allergens"`
@@ -535,6 +653,7 @@ func (q *Queries) ListMealsWithIngredientCount(ctx context.Context, householdID 
 			&i.PhotoUrl,
 			&i.Recipe,
 			&i.Allergens,
+			&i.Category,
 			&i.HouseholdID,
 			&i.IngredientCount,
 			&i.DerivedAllergens,
@@ -632,6 +751,82 @@ func (q *Queries) SetMealPlanDay(ctx context.Context, arg SetMealPlanDayParams) 
 	return i, err
 }
 
+const suggestMealByCategory = `-- name: SuggestMealByCategory :one
+SELECT
+    m.id, m.name, m.description, m.default_portions, m.season, m.photo_url, m.recipe, m.allergens, m.category, m.household_id,
+    COUNT(mi.shopping_item_id) AS ingredient_count,
+    (
+        SELECT COALESCE(array_agg(DISTINCT a), '{}')
+        FROM (
+            SELECT unnest(m.allergens) AS a
+            UNION
+            SELECT unnest(si.allergens)
+            FROM meal_ingredients mi2
+            JOIN shopping_items si ON si.id = mi2.shopping_item_id
+            WHERE mi2.meal_id = m.id
+            UNION
+            SELECT unnest(sub.allergens)
+            FROM meal_ingredients mi3
+            JOIN sub_ingredients sub ON sub.shopping_item_id = mi3.shopping_item_id
+            WHERE mi3.meal_id = m.id
+        ) all_allergens
+    )::text[] AS derived_allergens
+FROM meals m
+LEFT JOIN meal_ingredients mi ON mi.meal_id = m.id
+WHERE m.category = $1
+  AND (m.household_id IS NULL OR m.household_id = $2)
+GROUP BY m.id
+ORDER BY (
+    SELECT MAX(cl.cook_date)
+    FROM meal_cook_log cl
+    WHERE cl.meal_id = m.id AND cl.made
+) ASC NULLS FIRST, m.name
+LIMIT 1
+`
+
+type SuggestMealByCategoryParams struct {
+	Category    string      `json:"category"`
+	HouseholdID pgtype.Int4 `json:"household_id"`
+}
+
+type SuggestMealByCategoryRow struct {
+	ID               int32       `json:"id"`
+	Name             string      `json:"name"`
+	Description      pgtype.Text `json:"description"`
+	DefaultPortions  int32       `json:"default_portions"`
+	Season           NullSeason  `json:"season"`
+	PhotoUrl         pgtype.Text `json:"photo_url"`
+	Recipe           pgtype.Text `json:"recipe"`
+	Allergens        []string    `json:"allergens"`
+	Category         string      `json:"category"`
+	HouseholdID      pgtype.Int4 `json:"household_id"`
+	IngredientCount  int64       `json:"ingredient_count"`
+	DerivedAllergens []string    `json:"derived_allergens"`
+}
+
+// One suggested meal for a category slot: the least-recently-cooked meal in the
+// category (never-cooked meals come first), respecting household visibility.
+// Cook history lives in meal_cook_log, so this ordering is done server-side.
+func (q *Queries) SuggestMealByCategory(ctx context.Context, arg SuggestMealByCategoryParams) (SuggestMealByCategoryRow, error) {
+	row := q.db.QueryRow(ctx, suggestMealByCategory, arg.Category, arg.HouseholdID)
+	var i SuggestMealByCategoryRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.DefaultPortions,
+		&i.Season,
+		&i.PhotoUrl,
+		&i.Recipe,
+		&i.Allergens,
+		&i.Category,
+		&i.HouseholdID,
+		&i.IngredientCount,
+		&i.DerivedAllergens,
+	)
+	return i, err
+}
+
 const updateMeal = `-- name: UpdateMeal :one
 UPDATE meals
 SET name             = $1,
@@ -641,9 +836,10 @@ SET name             = $1,
     photo_url        = $5,
     recipe           = $6,
     allergens        = COALESCE($7::text[], '{}'),
-    household_id     = $8
-WHERE id = $9
-RETURNING id, name, description, default_portions, season, photo_url, recipe, allergens, household_id
+    category         = $8,
+    household_id     = $9
+WHERE id = $10
+RETURNING id, name, description, default_portions, season, photo_url, recipe, allergens, category, household_id
 `
 
 type UpdateMealParams struct {
@@ -654,6 +850,7 @@ type UpdateMealParams struct {
 	PhotoUrl        pgtype.Text `json:"photo_url"`
 	Recipe          pgtype.Text `json:"recipe"`
 	Allergens       []string    `json:"allergens"`
+	Category        string      `json:"category"`
 	HouseholdID     pgtype.Int4 `json:"household_id"`
 	ID              int32       `json:"id"`
 }
@@ -667,6 +864,7 @@ func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, e
 		arg.PhotoUrl,
 		arg.Recipe,
 		arg.Allergens,
+		arg.Category,
 		arg.HouseholdID,
 		arg.ID,
 	)
@@ -680,6 +878,7 @@ func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, e
 		&i.PhotoUrl,
 		&i.Recipe,
 		&i.Allergens,
+		&i.Category,
 		&i.HouseholdID,
 	)
 	return i, err
@@ -687,28 +886,34 @@ func (q *Queries) UpdateMeal(ctx context.Context, arg UpdateMealParams) (Meal, e
 
 const updateMealIngredient = `-- name: UpdateMealIngredient :one
 UPDATE meal_ingredients
-SET quantity = $3,
-    unit     = $4,
-    optional = $5
-WHERE meal_id = $1 AND shopping_item_id = $2
-RETURNING meal_id, shopping_item_id, quantity, unit, optional
+SET quantity             = $1,
+    unit                 = $2,
+    optional             = $3,
+    quantity_per_portion = $4,
+    dietary_tags         = COALESCE($5::text[], '{}')
+WHERE meal_id = $6 AND shopping_item_id = $7
+RETURNING meal_id, shopping_item_id, quantity, unit, optional, quantity_per_portion, dietary_tags
 `
 
 type UpdateMealIngredientParams struct {
-	MealID         int32          `json:"meal_id"`
-	ShoppingItemID int32          `json:"shopping_item_id"`
-	Quantity       pgtype.Numeric `json:"quantity"`
-	Unit           pgtype.Text    `json:"unit"`
-	Optional       bool           `json:"optional"`
+	Quantity           pgtype.Numeric `json:"quantity"`
+	Unit               pgtype.Text    `json:"unit"`
+	Optional           bool           `json:"optional"`
+	QuantityPerPortion pgtype.Numeric `json:"quantity_per_portion"`
+	DietaryTags        []string       `json:"dietary_tags"`
+	MealID             int32          `json:"meal_id"`
+	ShoppingItemID     int32          `json:"shopping_item_id"`
 }
 
 func (q *Queries) UpdateMealIngredient(ctx context.Context, arg UpdateMealIngredientParams) (MealIngredient, error) {
 	row := q.db.QueryRow(ctx, updateMealIngredient,
-		arg.MealID,
-		arg.ShoppingItemID,
 		arg.Quantity,
 		arg.Unit,
 		arg.Optional,
+		arg.QuantityPerPortion,
+		arg.DietaryTags,
+		arg.MealID,
+		arg.ShoppingItemID,
 	)
 	var i MealIngredient
 	err := row.Scan(
@@ -717,6 +922,8 @@ func (q *Queries) UpdateMealIngredient(ctx context.Context, arg UpdateMealIngred
 		&i.Quantity,
 		&i.Unit,
 		&i.Optional,
+		&i.QuantityPerPortion,
+		&i.DietaryTags,
 	)
 	return i, err
 }
