@@ -279,6 +279,22 @@ func GenerateNextWeek(ctx context.Context, db *pgxpool.Pool, arg GenerateWeekPar
 	return tag.RowsAffected(), nil
 }
 
+const pruneMealPlanBefore = `
+DELETE FROM meal_plan
+WHERE week_start < $1`
+
+// PruneMealPlanBefore deletes every meal_plan row whose week_start is strictly
+// before cutoff, returning how many rows were removed. Used by the weekly
+// scheduler to stop old past weeks accumulating indefinitely. Future weeks and
+// the retained recent window are left untouched.
+func PruneMealPlanBefore(ctx context.Context, db *pgxpool.Pool, cutoff time.Time) (int64, error) {
+	tag, err := db.Exec(ctx, pruneMealPlanBefore, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // DistinctScopeRow holds one (household_id, user_id) pair from meal_plan.
 type DistinctScopeRow struct {
 	HouseholdID pgtype.Int4
